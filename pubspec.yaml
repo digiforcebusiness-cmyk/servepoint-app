@@ -93,9 +93,9 @@ flutter_launcher_icons:
 
 msix_config:
   display_name: ServePoint POS
-  publisher_display_name: REPLACE_WITH_PARTNER_CENTER_PUBLISHER_NAME
-  identity_name: REPLACE_WITH_PARTNER_CENTER_IDENTITY_NAME
-  publisher: REPLACE_WITH_PARTNER_CENTER_PUBLISHER_ID
+  publisher_display_name: ServePoint POS
+  identity_name: ServePointPOS.ServePointPOS
+  publisher: CN=ED7311EE-ACC2-47EB-9885-53EBB96DE3DD
   msix_version: 1.0.0.0
   logo_path: assets/icon/app_icon.png
   start_menu_icon_path: assets/icon/app_icon.png
