@@ -1,0 +1,91 @@
+name: servepoint
+description: ServePoint — Professional Offline-First POS System for Restaurants & Cafes
+publish_to: "none"
+version: 1.0.0+13
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Firebase — multi-device real-time sync
+  firebase_core: ^3.6.0
+  cloud_firestore: ^5.4.4
+
+  # Local-First Database
+  drift: ^2.18.0
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.3
+  path: ^1.9.0
+
+  # State Management
+  riverpod: ^2.6.1
+  flutter_riverpod: ^2.6.1
+  hooks_riverpod: ^2.5.1
+  flutter_hooks: ^0.20.5
+  riverpod_annotation: ^2.3.5
+
+  # UI & UX
+  google_fonts: ^6.2.1
+  cached_network_image: ^3.3.1
+  flutter_svg: ^2.0.10+1
+  shimmer: ^3.0.0
+  gap: ^3.0.1
+  fl_chart: ^0.68.0
+
+  # Utilities
+  intl: ^0.20.2
+  uuid: ^4.4.0
+  collection: ^1.18.0
+
+  # Printing (ESC/POS for thermal printers via Bluetooth)
+  flutter_blue_plus: ^1.32.12
+  esc_pos_utils_plus: ^2.0.3
+
+  # PDF generation & print preview
+  pdf: ^3.11.1
+  printing: ^5.13.2
+
+  # QR Code
+  qr_flutter: ^4.1.0
+
+  # Image picking (product images, logo — file dialog on desktop)
+  image_picker: ^1.1.2
+  purchases_flutter: ^9.16.1
+  purchases_ui_flutter: ^9.16.1
+  flutter_local_notifications: ^18.0.0
+  firebase_auth: ^5.7.0
+  google_sign_in: ^6.2.1
+
+dependency_overrides:
+  # path_provider_foundation 2.6.0 introduced objective_c (macOS/iOS native pkg)
+  # which fails to compile on Windows. Pin to 2.5.1 which works on all platforms.
+  path_provider_foundation: 2.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  drift_dev: ^2.18.0
+  build_runner: ^2.4.11
+  riverpod_generator: ^2.4.0
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter:
+  uses-material-design: true
+
+  # Cairo font is loaded via google_fonts package at runtime — no bundled .ttf needed.
+  # assets/images/ and assets/icons/ are empty at project init (add product images later).
+
+  generate: true
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#0D2137"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"

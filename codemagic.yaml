@@ -1,0 +1,88 @@
+workflows:
+  ios-release:
+    name: iOS Release — App Store
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+
+    environment:
+      flutter: 3.27.0
+      xcode: latest
+      cocoapods: default
+      groups:
+        - apple_credentials   # Apple Distribution certificate + provisioning profile
+      vars:
+        BUNDLE_ID: "com.app.servepoint"
+        APP_STORE_APPLE_ID: "REPLACE_WITH_APP_STORE_APPLE_ID"  # from App Store Connect
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.app.servepoint
+
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "ios-v*"
+          include: true
+
+    scripts:
+      - name: Set up GoogleService-Info.plist
+        script: |
+          echo $FIREBASE_IOS_PLIST | base64 --decode > $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
+
+      - name: Flutter pub get
+        script: flutter pub get
+
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install
+
+      - name: Build iOS release IPA
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true
+        submit_to_app_store: false   # flip to true when ready for review
+
+  android-release:
+    name: Android Release — Google Play
+    max_build_duration: 45
+    instance_type: linux_x2
+
+    environment:
+      flutter: 3.27.0
+      groups:
+        - google_play_credentials
+
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "android-v*"
+          include: true
+
+    scripts:
+      - name: Flutter pub get
+        script: flutter pub get
+
+      - name: Build Android release AAB
+        script: |
+          flutter build appbundle --release
+
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
