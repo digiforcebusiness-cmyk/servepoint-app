@@ -2,65 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- ============================================================
-	     TODO: Replace the 3 values marked REPLACE_ME below.
-	     Steps (2 minutes):
-	       1. Go to console.firebase.google.com/project/servepoint-16302
-	       2. Click the gear icon → Project settings → "Your apps"
-	       3. Click "Add app" → iOS icon
-	       4. Bundle ID: com.app.servepoint → Register App
-	       5. Download GoogleService-Info.plist → replace this file entirely
-	     OR just paste the 3 values from the downloaded file into this file.
-	     ============================================================ -->
-
-	<!-- iOS-specific — get from Firebase Console (see TODO above) -->
-	<key>GOOGLE_APP_ID</key>
-	<string>REPLACE_ME_1:984531213248:ios:XXXXXXXXXXXXXXXX</string>
-
 	<key>CLIENT_ID</key>
-	<string>REPLACE_ME_984531213248-XXXXXXXXXXXXXXXX.apps.googleusercontent.com</string>
-
+	<string>984531213248-1bug93ot7hc64amt4pr1qdr2l450qkiv.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>REPLACE_ME_com.googleusercontent.apps.984531213248-XXXXXXXXXXXXXXXX</string>
-
-	<!-- ============================================================
-	     Everything below is already correct — do not change.
-	     ============================================================ -->
-
+	<string>com.googleusercontent.apps.984531213248-1bug93ot7hc64amt4pr1qdr2l450qkiv</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>984531213248-6p3van872oruqhbllihn6o4pdmp86k0s.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
-	<string>AIzaSyBppDzz8xrA-h3OaZz_1kimo420tdkTDfY</string>
-
+	<string>AIzaSyDuJcUSQLFfQiZ-zyif_eO1Ht2bp3Y4Ml0</string>
 	<key>GCM_SENDER_ID</key>
 	<string>984531213248</string>
-
 	<key>PLIST_VERSION</key>
 	<string>1</string>
-
 	<key>BUNDLE_ID</key>
 	<string>com.app.servepoint</string>
-
 	<key>PROJECT_ID</key>
 	<string>servepoint-16302</string>
-
 	<key>STORAGE_BUCKET</key>
 	<string>servepoint-16302.firebasestorage.app</string>
-
 	<key>IS_ADS_ENABLED</key>
 	<false/>
-
 	<key>IS_ANALYTICS_ENABLED</key>
 	<false/>
-
 	<key>IS_APPINVITE_ENABLED</key>
 	<true/>
-
 	<key>IS_GCM_ENABLED</key>
 	<true/>
-
 	<key>IS_SIGNIN_ENABLED</key>
 	<true/>
-
-	<key>DATABASE_URL</key>
-	<string>https://servepoint-16302-default-rtdb.firebaseio.com</string>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:984531213248:ios:b4465bccc6d95406568625</string>
 </dict>
 </plist>
