@@ -67,7 +67,10 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>ServePoint saves product photos to your photo library.</string>
 
-	<!-- Google Sign-In URL scheme — paste REVERSED_CLIENT_ID from GoogleService-Info.plist -->
+	<!-- Google Sign-In URL scheme.
+	     TODO: Replace the string below with the REVERSED_CLIENT_ID value
+	     from GoogleService-Info.plist once you complete the Firebase setup.
+	     It looks like: com.googleusercontent.apps.984531213248-XXXXXXXX -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
