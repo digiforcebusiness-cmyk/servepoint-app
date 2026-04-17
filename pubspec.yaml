@@ -75,6 +75,7 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.14.3
   msix: ^3.16.8
+  in_app_purchase: ^3.2.0
 
 flutter:
   uses-material-design: true
