@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
-/// The Microsoft Store Add-on product ID for ServePoint Pro.
-/// Must match the Store ID you create in Partner Center → Add-ons.
-const kWindowsProProductId = 'servepoint_pro_monthly';
+/// The Microsoft Store Add-on Store ID for ServePoint Pro.
+/// This is the auto-generated Store ID from Partner Center → Add-ons → servepoint_pro_monthly.
+const kWindowsProProductId = '9NP8JK6X73SJ';
 
 /// Handles Microsoft Store In-App Purchases on Windows only.
 /// Never instantiated or called on Android / iOS — all entry points are
