@@ -74,6 +74,7 @@ dev_dependencies:
   riverpod_generator: ^2.4.0
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.14.3
+  msix: ^3.16.8
 
 flutter:
   uses-material-design: true
@@ -89,3 +90,18 @@ flutter_launcher_icons:
   image_path: "assets/icon/app_icon.png"
   adaptive_icon_background: "#0D2137"
   adaptive_icon_foreground: "assets/icon/app_icon.png"
+
+msix_config:
+  display_name: ServePoint POS
+  publisher_display_name: REPLACE_WITH_PARTNER_CENTER_PUBLISHER_NAME
+  identity_name: REPLACE_WITH_PARTNER_CENTER_IDENTITY_NAME
+  publisher: REPLACE_WITH_PARTNER_CENTER_PUBLISHER_ID
+  msix_version: 1.0.0.0
+  logo_path: assets/icon/app_icon.png
+  start_menu_icon_path: assets/icon/app_icon.png
+  tile_icon_path: assets/icon/app_icon.png
+  icons_background_color: "#0D2137"
+  architecture: x64
+  capabilities: bluetooth, internetClient
+  store: true
+  languages: en-us, fr-fr, es-es, ar-sa
