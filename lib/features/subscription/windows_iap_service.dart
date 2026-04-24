@@ -20,6 +20,9 @@ class WindowsIAPService {
   bool _isPro = false;
   bool get isPro => _isPro;
 
+  bool _storeAvailable = false;
+  bool get isStoreAvailable => _storeAvailable;
+
   final _proController = StreamController<bool>.broadcast();
 
   /// Emits whenever Pro status changes (purchase or restore confirmed).
@@ -29,11 +32,19 @@ class WindowsIAPService {
 
   Future<void> initialize() async {
     if (!isSupported) return;
-    if (!await _iap.isAvailable()) {
-      debugPrint('[WindowsIAP] Microsoft Store not available on this device.');
+    try {
+      if (!await _iap.isAvailable()) {
+        debugPrint('[WindowsIAP] Microsoft Store not available on this device.');
+        return;
+      }
+    } catch (e) {
+      // Platform implementation not registered — running outside the Store
+      // (e.g. flutter run debug). IAP silently unavailable.
+      debugPrint('[WindowsIAP] IAP platform not registered: $e');
       return;
     }
 
+    _storeAvailable = true;
     _purchaseSub = _iap.purchaseStream.listen(
       _onPurchaseUpdate,
       onError: (e) => debugPrint('[WindowsIAP] Stream error: $e'),
@@ -75,31 +86,44 @@ class WindowsIAPService {
   /// Fetches product details from the Microsoft Store.
   Future<ProductDetails?> fetchProProduct() async {
     if (!isSupported) return null;
-    final response =
-        await _iap.queryProductDetails({kWindowsProProductId});
-    if (response.error != null) {
-      debugPrint('[WindowsIAP] queryProductDetails error: ${response.error}');
+    try {
+      final response =
+          await _iap.queryProductDetails({kWindowsProProductId});
+      if (response.error != null) {
+        debugPrint('[WindowsIAP] queryProductDetails error: ${response.error}');
+      }
+      return response.productDetails.firstOrNull;
+    } catch (e) {
+      debugPrint('[WindowsIAP] fetchProProduct unavailable: $e');
+      return null;
     }
-    return response.productDetails.firstOrNull;
   }
 
   /// Initiates the Microsoft Store subscription purchase flow.
   Future<void> buyPro() async {
     if (!isSupported) return;
-    final product = await fetchProProduct();
-    if (product == null) {
-      debugPrint('[WindowsIAP] Product not found in Store — '
-          'make sure the Add-on is published in Partner Center.');
-      return;
+    try {
+      final product = await fetchProProduct();
+      if (product == null) {
+        debugPrint('[WindowsIAP] Product not found in Store — '
+            'make sure the Add-on is published in Partner Center.');
+        return;
+      }
+      await _iap.buyNonConsumable(
+        purchaseParam: PurchaseParam(productDetails: product),
+      );
+    } catch (e) {
+      debugPrint('[WindowsIAP] buyPro unavailable: $e');
     }
-    await _iap.buyNonConsumable(
-      purchaseParam: PurchaseParam(productDetails: product),
-    );
   }
 
   /// Restores previously purchased subscriptions.
   Future<void> restore() async {
     if (!isSupported) return;
-    await _iap.restorePurchases();
+    try {
+      await _iap.restorePurchases();
+    } catch (e) {
+      debugPrint('[WindowsIAP] restore unavailable: $e');
+    }
   }
 }

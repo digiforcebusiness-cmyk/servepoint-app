@@ -21,15 +21,13 @@ import '../windows_iap_provider.dart';
 Future<bool> showServePointPaywall(BuildContext context, WidgetRef ref) async {
   // ── Windows: Microsoft Store IAP ─────────────────────────────────────────
   if (!kIsWeb && Platform.isWindows) {
-    final purchased = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
       builder: (_) => const _WindowsPaywallDialog(),
     );
-    if (purchased == true) {
-      await ref.read(windowsIAPProvider.notifier).restore();
-      return true;
-    }
-    return false;
+    // isPro is updated automatically by the purchase stream — no restore() call
+    // here, which would flash the AppGate through loading→OnboardingScreen(page 0).
+    return ref.read(windowsIsProProvider);
   }
 
   if (!isRevenueCatSupported) {
@@ -305,20 +303,55 @@ class _WindowsPaywallDialogState extends ConsumerState<_WindowsPaywallDialog> {
   }
 
   Future<void> _subscribe() async {
+    final service = ref.read(windowsIAPProvider.notifier).service;
+    if (service != null && !service.isStoreAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Subscription requires the Microsoft Store version of ServePoint. '
+            'Please install from the Store to subscribe.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
     setState(() => _loading = true);
     await ref.read(windowsIAPProvider.notifier).purchase();
-    if (mounted) Navigator.pop(context, true);
+    // buyNonConsumable() is fire-and-forget on Windows — the result arrives
+    // asynchronously via purchaseStream → windowsIsProProvider.
+    // The ref.listen in build() will pop the dialog when isPro becomes true.
+    // If the Store dialog was cancelled or failed, reset the loading state.
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _restore() async {
     setState(() => _loading = true);
-    await ref.read(windowsIAPProvider.notifier).restore();
-    final isPro = ref.read(windowsIsProProvider);
-    if (mounted) Navigator.pop(context, isPro);
+    await ref.read(windowsIAPProvider.notifier).silentRestore();
+    if (mounted) {
+      final isPro = ref.read(windowsIsProProvider);
+      if (isPro) {
+        Navigator.pop(context);
+      } else {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No active subscription found.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Auto-close the dialog as soon as the purchase stream confirms Pro.
+    ref.listen<bool>(windowsIsProProvider, (_, isPro) {
+      if (isPro && mounted) Navigator.pop(context);
+    });
+
     return AlertDialog(
       backgroundColor: AppColors.headerDark,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

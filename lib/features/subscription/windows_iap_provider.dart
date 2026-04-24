@@ -30,13 +30,29 @@ class WindowsIAPNotifier extends AsyncNotifier<bool> {
   /// Open the Microsoft Store subscription purchase flow.
   Future<void> purchase() async => _service?.buyPro();
 
-  /// Restore existing Microsoft Store purchases.
+  /// Restore existing Microsoft Store purchases (shows loading state).
   Future<void> restore() async {
     state = const AsyncValue.loading();
-    await _service?.restore();
-    // Give the purchase stream a moment to emit before settling.
-    await Future<void>.delayed(const Duration(seconds: 2));
-    state = AsyncValue.data(_service?.isPro ?? false);
+    try {
+      await _service?.restore();
+      // Give the purchase stream a moment to emit before settling.
+      await Future<void>.delayed(const Duration(seconds: 2));
+    } finally {
+      // Always settle the state — never leave the app stuck on loading.
+      state = AsyncValue.data(_service?.isPro ?? false);
+    }
+  }
+
+  /// Silently restore without setting loading state, so AppGate does not
+  /// flash OnboardingScreen back to page 0. Used from within the paywall dialog.
+  Future<void> silentRestore() async {
+    try {
+      await _service?.restore();
+      await Future<void>.delayed(const Duration(seconds: 2));
+      state = AsyncValue.data(_service?.isPro ?? false);
+    } catch (_) {
+      state = AsyncValue.data(_service?.isPro ?? false);
+    }
   }
 
   /// Expose service so the UI can fetch the price string.
