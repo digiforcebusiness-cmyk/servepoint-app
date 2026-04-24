@@ -38,13 +38,20 @@ workflows:
 
       - name: Set iOS build number
         script: |
-          NEXT_BUILD=500
-          echo "Setting CFBundleVersion to $NEXT_BUILD"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT_BUILD" ios/Runner/Info.plist
-          cat ios/Runner/Info.plist | grep -A1 CFBundleVersion
+          set -e
+          # Delete stale version.plist — persists on reused Codemagic Macs and overrides everything
+          find . -name "version.plist" -delete 2>/dev/null || true
+          echo "Deleted stale version.plist (if any)"
+          # agvtool is the only tool that works with VERSIONING_SYSTEM=apple-generic in project.pbxproj
+          cd ios && agvtool new-version -all 500 && cd ..
+          # Belt-and-suspenders: also write directly to Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 500" ios/Runner/Info.plist
+          echo "--- Verification ---"
+          echo "Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
 
       - name: Build iOS release IPA
         script: |
+          set -e
           flutter build ipa --release --build-number 500 --export-options-plist=/Users/builder/export_options.plist
 
     artifacts:
