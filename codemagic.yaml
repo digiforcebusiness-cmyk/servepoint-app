@@ -6,7 +6,7 @@ workflows:
 
     environment:
       flutter: 3.27.0
-      xcode: latest
+      xcode: 16.2
       cocoapods: default
       groups:
         - apple_credentials   # Apple Distribution certificate + provisioning profile
@@ -74,9 +74,9 @@ workflows:
 
           if [ "$BUILT_VER" != "500" ]; then
             echo "WARN: IPA has version $BUILT_VER instead of 500 — patching xcarchive and re-exporting"
+            rm -rf build/ios/ipa  # remove wrong-version IPA immediately so it cannot be published if patch fails
             /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 500" "$XCARCHIVE/Products/Applications/Runner.app/Info.plist"
             /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion 500" "$XCARCHIVE/Info.plist" 2>/dev/null || true
-            rm -rf build/ios/ipa
             xcodebuild -exportArchive \
               -archivePath "$XCARCHIVE" \
               -exportOptionsPlist /Users/builder/export_options.plist \
@@ -87,6 +87,7 @@ workflows:
             echo "CFBundleVersion in patched IPA: $PATCHED_VER"
             if [ "$PATCHED_VER" != "500" ]; then
               echo "FATAL: xcarchive patch failed — IPA still contains $PATCHED_VER"
+              rm -rf build/ios/ipa  # ensure nothing gets published
               exit 1
             fi
             echo "Patch successful — IPA version is now $PATCHED_VER"
