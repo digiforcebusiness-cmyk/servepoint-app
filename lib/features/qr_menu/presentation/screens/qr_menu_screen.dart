@@ -1,10 +1,15 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../../core/database/app_database.dart';
@@ -39,7 +44,9 @@ class QrMenuScreen extends ConsumerStatefulWidget {
 
 class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
   bool _publishing = false;
+  bool _downloading = false;
   _PublishedState _published = const _PublishedState();
+  final _qrKey = GlobalKey();
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -180,6 +187,59 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
     );
   }
 
+  Future<void> _downloadQr() async {
+    setState(() => _downloading = true);
+    final locale = ref.read(appLocaleProvider);
+    try {
+      // Capture the RepaintBoundary at 3× resolution for a crisp PNG.
+      final boundary =
+          _qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      final bytes = byteData!.buffer.asUint8List();
+
+      // Resolve save directory — prefer Downloads, fall back to Documents.
+      Directory? dir;
+      try {
+        dir = await getDownloadsDirectory();
+      } catch (_) {}
+      dir ??= await getApplicationDocumentsDirectory();
+
+      final fileName =
+          'menu_qr_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File('${dir.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(bytes);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              locale == 'ar'
+                  ? 'تم حفظ صورة QR في: ${file.path}'
+                  : 'QR sauvegardé : ${file.path}',
+            ),
+            backgroundColor: AppColors.accentGreen,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: AppColors.stockCritical,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = ref.watch(appLocaleProvider);
@@ -222,23 +282,26 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                     ),
                     child: Column(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: QrImageView(
-                            data: _menuUrl,
-                            version: QrVersions.auto,
-                            size: 220,
-                            eyeStyle: const QrEyeStyle(
-                              eyeShape: QrEyeShape.square,
-                              color: Color(0xFF0D2137),
+                        RepaintBoundary(
+                          key: _qrKey,
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
                             ),
-                            dataModuleStyle: const QrDataModuleStyle(
-                              dataModuleShape: QrDataModuleShape.square,
-                              color: Color(0xFFE94560),
+                            child: QrImageView(
+                              data: _menuUrl,
+                              version: QrVersions.auto,
+                              size: 220,
+                              eyeStyle: const QrEyeStyle(
+                                eyeShape: QrEyeShape.square,
+                                color: Color(0xFF0D2137),
+                              ),
+                              dataModuleStyle: const QrDataModuleStyle(
+                                dataModuleShape: QrDataModuleShape.square,
+                                color: Color(0xFFE94560),
+                              ),
                             ),
                           ),
                         ),
@@ -272,6 +335,41 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                                 const Icon(Icons.copy,
                                     size: 14, color: AppColors.accent),
                               ],
+                            ),
+                          ),
+                        ),
+                        const Gap(12),
+                        // Download button
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _downloading ? null : _downloadQr,
+                            icon: _downloading
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.accent,
+                                    ),
+                                  )
+                                : const Icon(Icons.download, size: 16),
+                            label: Text(
+                              locale == 'ar'
+                                  ? 'تنزيل صورة QR'
+                                  : 'Télécharger le QR',
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.accent,
+                              side: const BorderSide(
+                                  color: AppColors.accent, width: 1.5),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                           ),
                         ),
