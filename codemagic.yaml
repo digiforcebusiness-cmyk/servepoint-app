@@ -60,37 +60,48 @@ workflows:
           flutter build ipa --release --build-number 50 --export-options-plist=/Users/builder/export_options.plist
 
           echo "=== POST-BUILD DIAGNOSTICS ==="
-          echo "Generated.xcconfig after build:"
           cat ios/Flutter/Generated.xcconfig
-          XCARCHIVE="build/ios/archive/Runner.xcarchive"
-          ARCH_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$XCARCHIVE/Products/Applications/Runner.app/Info.plist" 2>/dev/null || echo "NOT_FOUND")
+          XCARCHIVE=$(find build/ios/archive -name "*.xcarchive" 2>/dev/null | head -1)
+          echo "xcarchive: $XCARCHIVE"
+          APP_IN_ARCHIVE=$(find "$XCARCHIVE/Products/Applications" -name "*.app" 2>/dev/null | head -1)
+          ARCH_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_IN_ARCHIVE/Info.plist" 2>/dev/null || echo "NOT_FOUND")
           echo "CFBundleVersion in xcarchive: $ARCH_VER"
 
           echo "=== IPA VERSION CHECK ==="
-          unzip -o build/ios/ipa/servepoint.ipa -d /tmp/ipa_verify > /dev/null
-          BUILT_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" /tmp/ipa_verify/Payload/Runner.app/Info.plist)
+          IPA_PATH=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)
+          echo "IPA path: $IPA_PATH"
+          if [ -z "$IPA_PATH" ]; then
+            echo "FATAL: no IPA found after build"
+            exit 1
+          fi
+          rm -rf /tmp/ipa_verify && unzip -o "$IPA_PATH" -d /tmp/ipa_verify > /dev/null
+          APP_IN_IPA=$(find /tmp/ipa_verify/Payload -name "*.app" 2>/dev/null | head -1)
+          BUILT_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_IN_IPA/Info.plist" 2>/dev/null || echo "NOT_FOUND")
           rm -rf /tmp/ipa_verify
           echo "CFBundleVersion in IPA: $BUILT_VER"
 
           if [ "$BUILT_VER" != "50" ]; then
-            echo "WARN: IPA has version $BUILT_VER instead of 50 — patching xcarchive and re-exporting"
-            rm -rf build/ios/ipa  # remove wrong-version IPA immediately so it cannot be published if patch fails
-            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 50" "$XCARCHIVE/Products/Applications/Runner.app/Info.plist"
+            echo "WARN: IPA has version $BUILT_VER — deleting and patching xcarchive"
+            rm -rf build/ios/ipa  # delete FIRST so wrong version cannot be published
+            APP_IN_ARCHIVE=$(find "$XCARCHIVE/Products/Applications" -name "*.app" 2>/dev/null | head -1)
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 50" "$APP_IN_ARCHIVE/Info.plist"
             /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion 50" "$XCARCHIVE/Info.plist" 2>/dev/null || true
             xcodebuild -exportArchive \
               -archivePath "$XCARCHIVE" \
               -exportOptionsPlist /Users/builder/export_options.plist \
               -exportPath build/ios/ipa
-            unzip -o build/ios/ipa/servepoint.ipa -d /tmp/ipa_verify2 > /dev/null
-            PATCHED_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" /tmp/ipa_verify2/Payload/Runner.app/Info.plist)
+            IPA_PATH2=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)
+            rm -rf /tmp/ipa_verify2 && unzip -o "$IPA_PATH2" -d /tmp/ipa_verify2 > /dev/null
+            APP_IN_IPA2=$(find /tmp/ipa_verify2/Payload -name "*.app" 2>/dev/null | head -1)
+            PATCHED_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_IN_IPA2/Info.plist" 2>/dev/null || echo "NOT_FOUND")
             rm -rf /tmp/ipa_verify2
             echo "CFBundleVersion in patched IPA: $PATCHED_VER"
             if [ "$PATCHED_VER" != "50" ]; then
-              echo "FATAL: xcarchive patch failed — IPA still contains $PATCHED_VER"
-              rm -rf build/ios/ipa  # ensure nothing gets published
+              echo "FATAL: patch failed — IPA still $PATCHED_VER"
+              rm -rf build/ios/ipa
               exit 1
             fi
-            echo "Patch successful — IPA version is now $PATCHED_VER"
+            echo "Patch OK — IPA is now version $PATCHED_VER"
           else
             echo "Version verified OK: $BUILT_VER"
           fi
