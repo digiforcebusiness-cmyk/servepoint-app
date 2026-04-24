@@ -12,6 +12,7 @@ import '../../../../shared/providers/app_providers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../../pos/presentation/providers/pos_providers.dart';
 import '../../../qr_menu/presentation/screens/qr_menu_screen.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 
@@ -149,6 +150,10 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
+          const Gap(16),
+
+          // ── Serveurs ──────────────────────────────────────────────────────
+          _ServeursSection(locale: locale),
           const Gap(16),
 
           // ── Feedback ──────────────────────────────────────────────────────
@@ -827,6 +832,133 @@ class _SubscriptionSection extends ConsumerWidget {
             },
           ),
       ],
+    );
+  }
+}
+
+// ─── Serveurs Section ─────────────────────────────────────────────────────────
+
+class _ServeursSection extends ConsumerWidget {
+  final String locale;
+  const _ServeursSection({required this.locale});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isAr = locale == 'ar';
+    final names = ref.watch(serverNamesListProvider);
+
+    return _SettingsSection(
+      title: isAr ? 'قائمة الخدّام' : 'Serveurs',
+      icon: Icons.people_outline,
+      children: [
+        // Existing server chips
+        if (names.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: names.map((name) {
+                return Chip(
+                  label: Text(
+                    name,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  deleteIcon: const Icon(Icons.close, size: 14),
+                  onDeleted: () =>
+                      ref.read(serverNamesListProvider.notifier).remove(name),
+                  backgroundColor: AppColors.surfaceElevated,
+                  deleteIconColor: AppColors.textMuted,
+                  side: const BorderSide(color: AppColors.divider),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                  labelStyle: const TextStyle(color: AppColors.textPrimary),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                );
+              }).toList(),
+            ),
+          ),
+        // Add button
+        ListTile(
+          leading: const Icon(Icons.add_circle_outline,
+              color: AppColors.accent, size: 22),
+          title: Text(
+            isAr ? 'إضافة خادم جديد' : 'Ajouter un serveur',
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accent),
+          ),
+          onTap: () => _showAddDialog(context, ref, isAr),
+          dense: true,
+        ),
+      ],
+    );
+  }
+
+  void _showAddDialog(BuildContext context, WidgetRef ref, bool isAr) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceCard,
+        title: Text(
+          isAr ? 'إضافة خادم' : 'Ajouter un serveur',
+          style: const TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          style: const TextStyle(fontSize: 14),
+          decoration: InputDecoration(
+            hintText: isAr ? 'اسم الخادم' : 'Nom du serveur',
+            hintStyle: const TextStyle(color: AppColors.textMuted),
+            filled: true,
+            fillColor: AppColors.surfaceElevated,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: AppColors.divider),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: AppColors.divider),
+            ),
+          ),
+          onSubmitted: (v) {
+            if (v.trim().isNotEmpty) {
+              ref.read(serverNamesListProvider.notifier).add(v);
+              Navigator.pop(ctx);
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(isAr ? 'إلغاء' : 'Annuler',
+                style: const TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              final name = ctrl.text.trim();
+              if (name.isNotEmpty) {
+                ref.read(serverNamesListProvider.notifier).add(name);
+                Navigator.pop(ctx);
+              }
+            },
+            child: Text(isAr ? 'إضافة' : 'Ajouter'),
+          ),
+        ],
+      ),
     );
   }
 }
