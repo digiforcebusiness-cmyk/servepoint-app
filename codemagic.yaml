@@ -40,6 +40,7 @@ workflows:
         script: |
           set -e
           rm -rf ~/Library/Developer/Xcode/DerivedData
+          rm -rf ~/Library/Developer/Xcode/Archives
           rm -rf build/ios/
           find . -name "version.plist" -delete 2>/dev/null || true
           echo "All caches wiped"
@@ -49,17 +50,49 @@ workflows:
       - name: Build iOS release IPA
         script: |
           set -e
+
+          echo "=== PRE-BUILD DIAGNOSTICS ==="
+          echo "pubspec version: $(grep '^version:' pubspec.yaml)"
+          echo "Generated.xcconfig:"
+          cat ios/Flutter/Generated.xcconfig
+          echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
+
           flutter build ipa --release --build-number 500 --export-options-plist=/Users/builder/export_options.plist
+
+          echo "=== POST-BUILD DIAGNOSTICS ==="
+          echo "Generated.xcconfig after build:"
+          cat ios/Flutter/Generated.xcconfig
+          XCARCHIVE="build/ios/archive/Runner.xcarchive"
+          ARCH_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$XCARCHIVE/Products/Applications/Runner.app/Info.plist" 2>/dev/null || echo "NOT_FOUND")
+          echo "CFBundleVersion in xcarchive: $ARCH_VER"
+
           echo "=== IPA VERSION CHECK ==="
           unzip -o build/ios/ipa/servepoint.ipa -d /tmp/ipa_verify > /dev/null
           BUILT_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" /tmp/ipa_verify/Payload/Runner.app/Info.plist)
           rm -rf /tmp/ipa_verify
           echo "CFBundleVersion in IPA: $BUILT_VER"
+
           if [ "$BUILT_VER" != "500" ]; then
-            echo "FATAL: Expected 500 but IPA contains $BUILT_VER — aborting before publish"
-            exit 1
+            echo "WARN: IPA has version $BUILT_VER instead of 500 — patching xcarchive and re-exporting"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 500" "$XCARCHIVE/Products/Applications/Runner.app/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion 500" "$XCARCHIVE/Info.plist" 2>/dev/null || true
+            rm -rf build/ios/ipa
+            xcodebuild -exportArchive \
+              -archivePath "$XCARCHIVE" \
+              -exportOptionsPlist /Users/builder/export_options.plist \
+              -exportPath build/ios/ipa
+            unzip -o build/ios/ipa/servepoint.ipa -d /tmp/ipa_verify2 > /dev/null
+            PATCHED_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" /tmp/ipa_verify2/Payload/Runner.app/Info.plist)
+            rm -rf /tmp/ipa_verify2
+            echo "CFBundleVersion in patched IPA: $PATCHED_VER"
+            if [ "$PATCHED_VER" != "500" ]; then
+              echo "FATAL: xcarchive patch failed — IPA still contains $PATCHED_VER"
+              exit 1
+            fi
+            echo "Patch successful — IPA version is now $PATCHED_VER"
+          else
+            echo "Version verified OK: $BUILT_VER"
           fi
-          echo "Version verified OK: $BUILT_VER"
 
     artifacts:
       - build/ios/ipa/*.ipa
