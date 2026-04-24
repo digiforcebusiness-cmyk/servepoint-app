@@ -271,7 +271,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ -f \"$PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion 500\" \"$PLIST\"\n  echo \"Fix Bundle Version: set CFBundleVersion=500 in $PLIST\"\nfi\n";
+			shellScript = "PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ -f \"$PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion 50\" \"$PLIST\"\n  echo \"Fix Bundle Version: set CFBundleVersion=50 in $PLIST\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
