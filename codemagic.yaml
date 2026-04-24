@@ -42,89 +42,81 @@ workflows:
           rm -rf ~/Library/Developer/Xcode/DerivedData
           rm -rf ~/Library/Developer/Xcode/Archives
           rm -rf build/ios/
-          rm -f ios/Flutter/Generated.xcconfig      # remove stale cached value
+          rm -f ios/Flutter/Generated.xcconfig
           find . -name "version.plist" -delete 2>/dev/null || true
-          # Nuke VERSIONING_SYSTEM from all configs (belt-and-suspenders for Xcode 26.2)
           sed -i '' 's/VERSIONING_SYSTEM = "apple-generic";//g' \
             ios/Runner.xcodeproj/project.pbxproj
-          echo "All caches wiped. VERSIONING_SYSTEM removed."
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 50" ios/Runner/Info.plist
-          echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
+          echo "Clean done. Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
 
       - name: Build iOS release IPA
         script: |
           set -e
           TARGET_BUILD=50
 
-          echo "=== PRE-BUILD ==="
-          echo "Flutter: $(flutter --version 2>&1 | head -1)"
-          echo "Xcode: $(xcodebuild -version 2>&1 | tr '\n' ' ')"
-          echo "pubspec: $(grep '^version:' pubspec.yaml)"
-          echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
-
           flutter build ipa --release --build-number $TARGET_BUILD \
             --export-options-plist=/Users/builder/export_options.plist
 
-          echo "=== POST-FLUTTER-BUILD: Generated.xcconfig ==="
-          cat ios/Flutter/Generated.xcconfig
+          # ── Direct IPA patch ──────────────────────────────────────────────
+          # Flutter/Xcode 26.2 ignores --build-number; patch the zip directly.
+          IPA=$(find build/ios/ipa -name "*.ipa" | head -1)
+          echo "Flutter IPA: $IPA"
+          [ -n "$IPA" ] || { echo "FATAL: no IPA"; exit 1; }
 
-          # Patch every xcarchive (build/ and ~/Library) unconditionally
-          patch_xcarchive() {
-            local ARCHIVE="$1"
-            [ -d "$ARCHIVE" ] || { echo "  skip (not found): $ARCHIVE"; return; }
-            local APP
-            APP=$(find "$ARCHIVE/Products/Applications" -name "*.app" | head -1)
-            local BEFORE
-            BEFORE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist" 2>/dev/null || echo "?")
-            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $TARGET_BUILD" "$APP/Info.plist"
-            /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $TARGET_BUILD" "$ARCHIVE/Info.plist" 2>/dev/null || true
-            local AFTER
-            AFTER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist" 2>/dev/null || echo "?")
-            echo "  patched: $BEFORE → $AFTER  ($ARCHIVE)"
-          }
+          WORK=$(mktemp -d)
+          unzip -q "$IPA" -d "$WORK"
+          APP=$(find "$WORK/Payload" -name "*.app" | head -1)
+          ORIG_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist")
+          echo "IPA CFBundleVersion before patch: $ORIG_VER"
 
-          echo "=== PATCHING ALL XCARCHIVES ==="
-          BUILD_XCARCHIVE=$(find build/ios/archive -name "*.xcarchive" | head -1)
-          echo "build xcarchive: ${BUILD_XCARCHIVE:-NONE}"
-          patch_xcarchive "$BUILD_XCARCHIVE"
-          while IFS= read -r ARCH; do
-            patch_xcarchive "$ARCH"
-          done < <(find ~/Library/Developer/Xcode/Archives -name "*.xcarchive" 2>/dev/null)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $TARGET_BUILD" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.0" "$APP/Info.plist"
+          echo "IPA CFBundleVersion after patch:  $TARGET_BUILD"
 
-          echo "=== RE-EXPORTING FROM PATCHED XCARCHIVE ==="
-          rm -f build/ios/ipa/*.ipa
-          rm -rf /tmp/ipa_export
+          # Extract entitlements from the embedded provisioning profile
+          security cms -D -i "$APP/embedded.mobileprovision" -o /tmp/provision.plist
+          plutil -extract Entitlements xml1 -o /tmp/entitlements.plist /tmp/provision.plist
+          echo "Entitlements: $(wc -c < /tmp/entitlements.plist) bytes"
 
-          [ -n "$BUILD_XCARCHIVE" ] || { echo "FATAL: no xcarchive"; exit 1; }
+          # Get distribution signing identity from keychain
+          SIGNING_ID=$(security find-identity -v -p codesigning \
+            | grep "Apple Distribution" | head -1 | awk -F '"' '{print $2}')
+          echo "Signing identity: $SIGNING_ID"
 
-          xcodebuild -exportArchive \
-            -archivePath "$BUILD_XCARCHIVE" \
-            -exportOptionsPlist /Users/builder/export_options.plist \
-            -exportPath /tmp/ipa_export
+          # Re-sign nested frameworks (must happen before app re-sign)
+          find "$APP/Frameworks" -maxdepth 1 -name "*.framework" 2>/dev/null \
+          | while read FW; do
+              codesign --force --sign "$SIGNING_ID" "$FW" 2>/dev/null \
+                && echo "  resigned: $FW" || echo "  skip: $FW"
+            done
 
-          EXPORTED_IPA=$(find /tmp/ipa_export -name "*.ipa" | head -1)
-          echo "Exported IPA: ${EXPORTED_IPA:-NONE}"
-          [ -n "$EXPORTED_IPA" ] || { ls -la /tmp/ipa_export/ 2>/dev/null; echo "FATAL: no IPA exported"; exit 1; }
+          # Re-sign the app bundle
+          codesign --force --sign "$SIGNING_ID" \
+            --entitlements /tmp/entitlements.plist \
+            "$APP"
+          codesign -v "$APP" && echo "Signature valid" || echo "Signature check (non-fatal)"
 
-          mkdir -p build/ios/ipa
-          cp "$EXPORTED_IPA" build/ios/ipa/servepoint.ipa
-          rm -rf /tmp/ipa_export
+          # Repack IPA in-place
+          PATCHED=$(mktemp /tmp/p.XXXXXX.ipa)
+          (cd "$WORK" && zip -qr "$PATCHED" Payload/)
+          cp "$PATCHED" build/ios/ipa/servepoint.ipa
+          rm -f "$PATCHED"
+          rm -rf "$WORK"
 
-          echo "=== FINAL VERIFICATION ==="
-          rm -rf /tmp/ipa_verify
-          unzip -q build/ios/ipa/servepoint.ipa -d /tmp/ipa_verify
-          FINAL_APP=$(find /tmp/ipa_verify/Payload -name "*.app" | head -1)
-          FINAL_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$FINAL_APP/Info.plist" 2>/dev/null || echo "NOT_FOUND")
-          rm -rf /tmp/ipa_verify
-          ls -lh build/ios/ipa/
-          echo "Final CFBundleVersion in servepoint.ipa: $FINAL_VER"
-          [ "$FINAL_VER" = "$TARGET_BUILD" ] || { echo "FATAL: version $FINAL_VER != $TARGET_BUILD"; exit 1; }
-          echo "VERIFIED OK"
+          # ── Verify ───────────────────────────────────────────────────────
+          rm -rf /tmp/ipav
+          unzip -q build/ios/ipa/servepoint.ipa -d /tmp/ipav
+          VAPP=$(find /tmp/ipav/Payload -name "*.app" | head -1)
+          VVER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$VAPP/Info.plist")
+          rm -rf /tmp/ipav
+          echo "Verified CFBundleVersion: $VVER"
+          [ "$VVER" = "$TARGET_BUILD" ] || { echo "FATAL: $VVER != $TARGET_BUILD"; exit 1; }
 
-          echo "=== UPLOADING TO TESTFLIGHT ==="
+          # ── Upload to TestFlight ─────────────────────────────────────────
           KEY_DIR=~/.appstoreconnect/private_keys
           mkdir -p "$KEY_DIR"
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            > "$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
           chmod 600 "$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
 
           xcrun altool --upload-app \
@@ -135,19 +127,18 @@ workflows:
             --verbose
 
           rm -f "$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
-          echo "=== UPLOAD COMPLETE ==="
+          echo "UPLOAD COMPLETE"
 
     artifacts:
       - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
 
     publishing:
-      app_store_connect:
-        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
-        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
-        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-        submit_to_testflight: false   # upload handled manually in build script above
-        submit_to_app_store: false
+      email:
+        recipients:
+          - mobilestudio66@gmail.com
+        notify:
+          success: true
+          failure: true
 
   android-release:
     name: Android Release — Google Play
