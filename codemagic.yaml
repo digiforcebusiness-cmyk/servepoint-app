@@ -36,21 +36,30 @@ workflows:
         script: |
           cd ios && pod install
 
-      - name: Clean DerivedData and set build number
+      - name: Clean caches and set build number
         script: |
           set -e
-          # Wipe Xcode DerivedData — stale cached binaries survive across builds on shared Macs
           rm -rf ~/Library/Developer/Xcode/DerivedData
+          rm -rf build/ios/
           find . -name "version.plist" -delete 2>/dev/null || true
-          echo "DerivedData wiped, stale version.plist removed"
-          # Write CFBundleVersion directly into the source Info.plist (VERSIONING_SYSTEM removed from project)
+          echo "All caches wiped"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 500" ios/Runner/Info.plist
-          echo "CFBundleVersion set to: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
+          echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
 
       - name: Build iOS release IPA
         script: |
           set -e
           flutter build ipa --release --build-number 500 --export-options-plist=/Users/builder/export_options.plist
+          echo "=== IPA VERSION CHECK ==="
+          unzip -o build/ios/ipa/servepoint.ipa -d /tmp/ipa_verify > /dev/null
+          BUILT_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" /tmp/ipa_verify/Payload/Runner.app/Info.plist)
+          rm -rf /tmp/ipa_verify
+          echo "CFBundleVersion in IPA: $BUILT_VER"
+          if [ "$BUILT_VER" != "500" ]; then
+            echo "FATAL: Expected 500 but IPA contains $BUILT_VER — aborting before publish"
+            exit 1
+          fi
+          echo "Version verified OK: $BUILT_VER"
 
     artifacts:
       - build/ios/ipa/*.ipa
