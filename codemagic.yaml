@@ -42,8 +42,12 @@ workflows:
           rm -rf ~/Library/Developer/Xcode/DerivedData
           rm -rf ~/Library/Developer/Xcode/Archives
           rm -rf build/ios/
+          rm -f ios/Flutter/Generated.xcconfig      # remove stale cached value
           find . -name "version.plist" -delete 2>/dev/null || true
-          echo "All caches wiped"
+          # Nuke VERSIONING_SYSTEM from all configs (belt-and-suspenders for Xcode 26.2)
+          sed -i '' 's/VERSIONING_SYSTEM = "apple-generic";//g' \
+            ios/Runner.xcodeproj/project.pbxproj
+          echo "All caches wiped. VERSIONING_SYSTEM removed."
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 50" ios/Runner/Info.plist
           echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
 
@@ -57,17 +61,14 @@ workflows:
           echo "Xcode: $(xcodebuild -version 2>&1 | tr '\n' ' ')"
           echo "pubspec: $(grep '^version:' pubspec.yaml)"
           echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
-          echo "Xcode Archives before build: $(ls ~/Library/Developer/Xcode/Archives/ 2>/dev/null || echo '(empty)')"
 
           flutter build ipa --release --build-number $TARGET_BUILD \
             --export-options-plist=/Users/builder/export_options.plist
 
-          echo "=== POST-FLUTTER-BUILD ==="
-          echo "--- Generated.xcconfig ---"
+          echo "=== POST-FLUTTER-BUILD: Generated.xcconfig ==="
           cat ios/Flutter/Generated.xcconfig
-          echo "--- end Generated.xcconfig ---"
 
-          # Patch helper: patch both app bundle and archive metadata
+          # Patch every xcarchive (build/ and ~/Library) unconditionally
           patch_xcarchive() {
             local ARCHIVE="$1"
             [ -d "$ARCHIVE" ] || { echo "  skip (not found): $ARCHIVE"; return; }
@@ -79,30 +80,22 @@ workflows:
             /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $TARGET_BUILD" "$ARCHIVE/Info.plist" 2>/dev/null || true
             local AFTER
             AFTER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist" 2>/dev/null || echo "?")
-            echo "  patched $ARCHIVE: $BEFORE → $AFTER"
+            echo "  patched: $BEFORE → $AFTER  ($ARCHIVE)"
           }
 
           echo "=== PATCHING ALL XCARCHIVES ==="
-          # flutter puts archive in build/ios/archive AND xcodebuild copies to ~/Library
-          # Codemagic publisher may re-export from either — patch both
           BUILD_XCARCHIVE=$(find build/ios/archive -name "*.xcarchive" | head -1)
-          echo "build xcarchive: $BUILD_XCARCHIVE"
+          echo "build xcarchive: ${BUILD_XCARCHIVE:-NONE}"
           patch_xcarchive "$BUILD_XCARCHIVE"
-
-          echo "Xcode Archives xcarchives:"
-          find ~/Library/Developer/Xcode/Archives -name "*.xcarchive" 2>/dev/null | while read ARCH; do
-            echo "  found: $ARCH"
+          while IFS= read -r ARCH; do
             patch_xcarchive "$ARCH"
-          done
+          done < <(find ~/Library/Developer/Xcode/Archives -name "*.xcarchive" 2>/dev/null)
 
           echo "=== RE-EXPORTING FROM PATCHED XCARCHIVE ==="
           rm -f build/ios/ipa/*.ipa
           rm -rf /tmp/ipa_export
 
-          if [ -z "$BUILD_XCARCHIVE" ]; then
-            echo "FATAL: no xcarchive in build/ios/archive"
-            exit 1
-          fi
+          [ -n "$BUILD_XCARCHIVE" ] || { echo "FATAL: no xcarchive"; exit 1; }
 
           xcodebuild -exportArchive \
             -archivePath "$BUILD_XCARCHIVE" \
@@ -110,13 +103,8 @@ workflows:
             -exportPath /tmp/ipa_export
 
           EXPORTED_IPA=$(find /tmp/ipa_export -name "*.ipa" | head -1)
-          echo "Exported IPA: $EXPORTED_IPA"
-
-          if [ -z "$EXPORTED_IPA" ]; then
-            echo "FATAL: xcodebuild -exportArchive produced no IPA"
-            ls -la /tmp/ipa_export/ 2>/dev/null || true
-            exit 1
-          fi
+          echo "Exported IPA: ${EXPORTED_IPA:-NONE}"
+          [ -n "$EXPORTED_IPA" ] || { ls -la /tmp/ipa_export/ 2>/dev/null; echo "FATAL: no IPA exported"; exit 1; }
 
           mkdir -p build/ios/ipa
           cp "$EXPORTED_IPA" build/ios/ipa/servepoint.ipa
@@ -130,12 +118,24 @@ workflows:
           rm -rf /tmp/ipa_verify
           ls -lh build/ios/ipa/
           echo "Final CFBundleVersion in servepoint.ipa: $FINAL_VER"
+          [ "$FINAL_VER" = "$TARGET_BUILD" ] || { echo "FATAL: version $FINAL_VER != $TARGET_BUILD"; exit 1; }
+          echo "VERIFIED OK"
 
-          if [ "$FINAL_VER" != "$TARGET_BUILD" ]; then
-            echo "FATAL: IPA version $FINAL_VER != $TARGET_BUILD — aborting"
-            exit 1
-          fi
-          echo "SUCCESS — servepoint.ipa verified at version $FINAL_VER"
+          echo "=== UPLOADING TO TESTFLIGHT ==="
+          KEY_DIR=~/.appstoreconnect/private_keys
+          mkdir -p "$KEY_DIR"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+          chmod 600 "$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+
+          xcrun altool --upload-app \
+            --type ios \
+            --file build/ios/ipa/servepoint.ipa \
+            --apiKey "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" \
+            --verbose
+
+          rm -f "$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+          echo "=== UPLOAD COMPLETE ==="
 
     artifacts:
       - build/ios/ipa/*.ipa
@@ -146,8 +146,8 @@ workflows:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-        submit_to_testflight: true
-        submit_to_app_store: false   # flip to true when ready for review
+        submit_to_testflight: false   # upload handled manually in build script above
+        submit_to_app_store: false
 
   android-release:
     name: Android Release — Google Play
