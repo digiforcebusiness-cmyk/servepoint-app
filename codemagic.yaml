@@ -57,40 +57,55 @@ workflows:
           echo "Xcode: $(xcodebuild -version 2>&1 | tr '\n' ' ')"
           echo "pubspec: $(grep '^version:' pubspec.yaml)"
           echo "Source Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
+          echo "Xcode Archives before build: $(ls ~/Library/Developer/Xcode/Archives/ 2>/dev/null || echo '(empty)')"
 
           flutter build ipa --release --build-number $TARGET_BUILD \
             --export-options-plist=/Users/builder/export_options.plist
 
           echo "=== POST-FLUTTER-BUILD ==="
-          echo "Generated.xcconfig:"
+          echo "--- Generated.xcconfig ---"
           cat ios/Flutter/Generated.xcconfig
+          echo "--- end Generated.xcconfig ---"
 
-          XCARCHIVE=$(find build/ios/archive -name "*.xcarchive" | head -1)
-          echo "xcarchive: $XCARCHIVE"
+          # Patch helper: patch both app bundle and archive metadata
+          patch_xcarchive() {
+            local ARCHIVE="$1"
+            [ -d "$ARCHIVE" ] || { echo "  skip (not found): $ARCHIVE"; return; }
+            local APP
+            APP=$(find "$ARCHIVE/Products/Applications" -name "*.app" | head -1)
+            local BEFORE
+            BEFORE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist" 2>/dev/null || echo "?")
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $TARGET_BUILD" "$APP/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $TARGET_BUILD" "$ARCHIVE/Info.plist" 2>/dev/null || true
+            local AFTER
+            AFTER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist" 2>/dev/null || echo "?")
+            echo "  patched $ARCHIVE: $BEFORE → $AFTER"
+          }
 
-          if [ -z "$XCARCHIVE" ]; then
-            echo "FATAL: no xcarchive produced"
+          echo "=== PATCHING ALL XCARCHIVES ==="
+          # flutter puts archive in build/ios/archive AND xcodebuild copies to ~/Library
+          # Codemagic publisher may re-export from either — patch both
+          BUILD_XCARCHIVE=$(find build/ios/archive -name "*.xcarchive" | head -1)
+          echo "build xcarchive: $BUILD_XCARCHIVE"
+          patch_xcarchive "$BUILD_XCARCHIVE"
+
+          echo "Xcode Archives xcarchives:"
+          find ~/Library/Developer/Xcode/Archives -name "*.xcarchive" 2>/dev/null | while read ARCH; do
+            echo "  found: $ARCH"
+            patch_xcarchive "$ARCH"
+          done
+
+          echo "=== RE-EXPORTING FROM PATCHED XCARCHIVE ==="
+          rm -f build/ios/ipa/*.ipa
+          rm -rf /tmp/ipa_export
+
+          if [ -z "$BUILD_XCARCHIVE" ]; then
+            echo "FATAL: no xcarchive in build/ios/archive"
             exit 1
           fi
 
-          # Inspect xcarchive version BEFORE patch
-          XCARCHIVE_APP=$(find "$XCARCHIVE/Products/Applications" -name "*.app" | head -1)
-          echo "xcarchive app: $XCARCHIVE_APP"
-          echo "xcarchive CFBundleVersion BEFORE patch: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$XCARCHIVE_APP/Info.plist")"
-
-          # Always patch the xcarchive (Xcode 26.2 beta ignores --build-number)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $TARGET_BUILD" "$XCARCHIVE_APP/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $TARGET_BUILD" "$XCARCHIVE/Info.plist" 2>/dev/null || true
-          echo "xcarchive CFBundleVersion AFTER patch: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$XCARCHIVE_APP/Info.plist")"
-
-          # Remove all IPAs flutter produced (we will create the correct one from patched xcarchive)
-          rm -f build/ios/ipa/*.ipa
-
-          # Re-export from patched xcarchive to a clean temp directory
-          echo "Re-exporting from patched xcarchive..."
-          rm -rf /tmp/ipa_export
           xcodebuild -exportArchive \
-            -archivePath "$XCARCHIVE" \
+            -archivePath "$BUILD_XCARCHIVE" \
             -exportOptionsPlist /Users/builder/export_options.plist \
             -exportPath /tmp/ipa_export
 
@@ -103,25 +118,24 @@ workflows:
             exit 1
           fi
 
-          # Place at canonical path — this is where Codemagic publisher reads
           mkdir -p build/ios/ipa
           cp "$EXPORTED_IPA" build/ios/ipa/servepoint.ipa
           rm -rf /tmp/ipa_export
 
-          # Final verification — fail build if wrong version (never upload wrong build)
+          echo "=== FINAL VERIFICATION ==="
           rm -rf /tmp/ipa_verify
           unzip -q build/ios/ipa/servepoint.ipa -d /tmp/ipa_verify
           FINAL_APP=$(find /tmp/ipa_verify/Payload -name "*.app" | head -1)
           FINAL_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$FINAL_APP/Info.plist" 2>/dev/null || echo "NOT_FOUND")
           rm -rf /tmp/ipa_verify
-          echo "=== FINAL CFBundleVersion: $FINAL_VER ==="
           ls -lh build/ios/ipa/
+          echo "Final CFBundleVersion in servepoint.ipa: $FINAL_VER"
 
           if [ "$FINAL_VER" != "$TARGET_BUILD" ]; then
-            echo "FATAL: IPA has version $FINAL_VER, expected $TARGET_BUILD — aborting to prevent wrong upload"
+            echo "FATAL: IPA version $FINAL_VER != $TARGET_BUILD — aborting"
             exit 1
           fi
-          echo "SUCCESS — build/ios/ipa/servepoint.ipa is verified at version $FINAL_VER"
+          echo "SUCCESS — servepoint.ipa verified at version $FINAL_VER"
 
     artifacts:
       - build/ios/ipa/*.ipa
