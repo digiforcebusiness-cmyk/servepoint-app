@@ -51,12 +51,13 @@ workflows:
         script: |
           set -e
 
+          TARGET_BUILD=50
+
           echo "=== PRE-BUILD ==="
           echo "pubspec: $(grep '^version:' pubspec.yaml)"
-          cat ios/Flutter/Generated.xcconfig 2>/dev/null || echo "(Generated.xcconfig not yet created)"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" ios/Runner/Info.plist 2>/dev/null || true
+          echo "Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist 2>/dev/null || echo NOT_FOUND)"
 
-          flutter build ipa --release --build-number 50 --export-options-plist=/Users/builder/export_options.plist
+          flutter build ipa --release --build-number $TARGET_BUILD --export-options-plist=/Users/builder/export_options.plist
 
           echo "=== POST-BUILD ==="
           XCARCHIVE=$(find build/ios/archive -name "*.xcarchive" 2>/dev/null | head -1)
@@ -69,45 +70,60 @@ workflows:
             exit 1
           fi
 
+          # Check version in the IPA Codemagic will publish
           rm -rf /tmp/ipa_check
-          unzip -o "$IPA_PATH" -d /tmp/ipa_check > /dev/null 2>&1
-          APP_PATH=$(find /tmp/ipa_check/Payload -name "*.app" 2>/dev/null | head -1)
+          unzip -q "$IPA_PATH" -d /tmp/ipa_check
+          APP_PATH=$(find /tmp/ipa_check/Payload -name "*.app" | head -1)
           BUILT_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PATH/Info.plist" 2>/dev/null || echo "NOT_FOUND")
           rm -rf /tmp/ipa_check
-          echo "CFBundleVersion in built IPA: $BUILT_VER"
+          echo "CFBundleVersion in IPA: $BUILT_VER"
 
-          if [ "$BUILT_VER" = "50" ]; then
-            echo "Version OK — moving IPA to verified-ipa/"
-            mkdir -p build/ios/verified-ipa
-            cp "$IPA_PATH" build/ios/verified-ipa/servepoint.ipa
+          if [ "$BUILT_VER" = "$TARGET_BUILD" ]; then
+            echo "Version OK — $BUILT_VER matches target"
           else
-            echo "WARN: version is $BUILT_VER, attempting xcarchive patch"
-            APP_IN_ARCHIVE=$(find "$XCARCHIVE/Products/Applications" -name "*.app" 2>/dev/null | head -1)
-            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 50" "$APP_IN_ARCHIVE/Info.plist"
-            /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion 50" "$XCARCHIVE/Info.plist" 2>/dev/null || true
+            echo "WARN: IPA has version $BUILT_VER, need $TARGET_BUILD — patching xcarchive and re-exporting in-place"
+
+            if [ -z "$XCARCHIVE" ]; then
+              echo "FATAL: no xcarchive found to patch"
+              exit 1
+            fi
+
+            # Patch the app bundle inside the xcarchive
+            APP_IN_ARCHIVE=$(find "$XCARCHIVE/Products/Applications" -name "*.app" | head -1)
+            echo "Patching $APP_IN_ARCHIVE/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $TARGET_BUILD" "$APP_IN_ARCHIVE/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $TARGET_BUILD" "$XCARCHIVE/Info.plist" 2>/dev/null || true
+            echo "xcarchive plist after patch:"
+            /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_IN_ARCHIVE/Info.plist"
+
+            # Re-export INTO build/ios/ipa/ (overwriting the original so Codemagic publishing picks it up)
+            IPA_DIR=$(dirname "$IPA_PATH")
             xcodebuild -exportArchive \
               -archivePath "$XCARCHIVE" \
               -exportOptionsPlist /Users/builder/export_options.plist \
-              -exportPath build/ios/patched-ipa
-            PATCHED_IPA=$(find build/ios/patched-ipa -name "*.ipa" 2>/dev/null | head -1)
+              -exportPath "$IPA_DIR"
+
+            # Verify patched IPA
             rm -rf /tmp/ipa_check2
-            unzip -o "$PATCHED_IPA" -d /tmp/ipa_check2 > /dev/null 2>&1
-            APP_PATH2=$(find /tmp/ipa_check2/Payload -name "*.app" 2>/dev/null | head -1)
+            unzip -q "$IPA_PATH" -d /tmp/ipa_check2
+            APP_PATH2=$(find /tmp/ipa_check2/Payload -name "*.app" | head -1)
             PATCHED_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PATH2/Info.plist" 2>/dev/null || echo "NOT_FOUND")
             rm -rf /tmp/ipa_check2
-            echo "CFBundleVersion in patched IPA: $PATCHED_VER"
-            if [ "$PATCHED_VER" = "50" ]; then
-              mkdir -p build/ios/verified-ipa
-              cp "$PATCHED_IPA" build/ios/verified-ipa/servepoint.ipa
-              echo "Patch OK — IPA version $PATCHED_VER moved to verified-ipa/"
-            else
-              echo "FATAL: patch failed — $PATCHED_VER"
+            echo "CFBundleVersion after patch: $PATCHED_VER"
+
+            if [ "$PATCHED_VER" != "$TARGET_BUILD" ]; then
+              echo "FATAL: patch failed — got $PATCHED_VER"
               exit 1
             fi
+            echo "Patch OK — $IPA_PATH now has version $PATCHED_VER"
           fi
 
+          echo "=== FINAL IPA ==="
+          echo "Path: $IPA_PATH"
+          echo "Size: $(du -h "$IPA_PATH" | cut -f1)"
+
     artifacts:
-      - build/ios/verified-ipa/*.ipa
+      - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
