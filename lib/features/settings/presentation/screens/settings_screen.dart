@@ -9,6 +9,8 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../shared/providers/app_providers.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../../qr_menu/presentation/screens/qr_menu_screen.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 
@@ -142,6 +144,35 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const QrMenuScreen()),
+                ),
+              ),
+            ],
+          ),
+          const Gap(16),
+
+          // ── Feedback ──────────────────────────────────────────────────────
+          _SettingsSection(
+            title: locale == 'ar' ? 'التواصل والدعم' : 'Retour & Support',
+            icon: Icons.feedback_outlined,
+            children: [
+              _NavTile(
+                icon: Icons.bug_report_outlined,
+                label: locale == 'ar' ? 'الإبلاغ عن خطأ' : 'Signaler un bug',
+                onTap: () => _showFeedbackSheet(
+                  context,
+                  locale: locale,
+                  type: _FeedbackType.bug,
+                ),
+              ),
+              _NavTile(
+                icon: Icons.lightbulb_outline,
+                label: locale == 'ar'
+                    ? 'اقتراح ميزة أو فكرة'
+                    : 'Suggérer une fonctionnalité',
+                onTap: () => _showFeedbackSheet(
+                  context,
+                  locale: locale,
+                  type: _FeedbackType.feature,
                 ),
               ),
             ],
@@ -795,6 +826,239 @@ class _SubscriptionSection extends ConsumerWidget {
             },
           ),
       ],
+    );
+  }
+}
+
+// ─── Feedback ─────────────────────────────────────────────────────────────────
+
+enum _FeedbackType { bug, feature }
+
+void _showFeedbackSheet(
+  BuildContext context, {
+  required String locale,
+  required _FeedbackType type,
+}) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppColors.surfaceCard,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _FeedbackSheet(locale: locale, type: type),
+  );
+}
+
+class _FeedbackSheet extends StatefulWidget {
+  final String locale;
+  final _FeedbackType type;
+
+  const _FeedbackSheet({required this.locale, required this.type});
+
+  @override
+  State<_FeedbackSheet> createState() => _FeedbackSheetState();
+}
+
+class _FeedbackSheetState extends State<_FeedbackSheet> {
+  final _ctrl = TextEditingController();
+  bool _sending = false;
+
+  bool get _isBug => widget.type == _FeedbackType.bug;
+  bool get _isAr => widget.locale == 'ar';
+
+  String get _title => _isBug
+      ? (_isAr ? 'الإبلاغ عن خطأ' : 'Signaler un bug')
+      : (_isAr ? 'اقتراح ميزة أو فكرة' : 'Suggérer une fonctionnalité');
+
+  String get _hint => _isBug
+      ? (_isAr
+          ? 'صف الخطأ الذي واجهته بالتفصيل: ماذا حدث؟ ماذا كنت تفعل قبل ذلك؟'
+          : 'Décrivez le bug en détail : que s\'est-il passé ? Quelle action a déclenché le problème ?')
+      : (_isAr
+          ? 'صف الميزة أو الفكرة التي تقترحها وكيف ستساعدك في العمل؟'
+          : 'Décrivez la fonctionnalité souhaitée et en quoi elle vous aiderait.');
+
+  Future<void> _send() async {
+    final msg = _ctrl.text.trim();
+    if (msg.isEmpty) return;
+    setState(() => _sending = true);
+
+    final subject = _isBug ? 'Bug Report — ServePoint POS' : 'Feature Request — ServePoint POS';
+    final body = Uri.encodeComponent(msg);
+    final uri = Uri.parse(
+        'mailto:digiforcebusiness@gmail.com?subject=${Uri.encodeComponent(subject)}&body=$body');
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        if (mounted) Navigator.pop(context);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_isAr
+                  ? 'لم يتم العثور على تطبيق بريد إلكتروني. تواصل معنا على digiforcebusiness@gmail.com'
+                  : 'Aucune application email trouvée. Contactez-nous à digiforcebusiness@gmail.com'),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // Title row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (_isBug ? AppColors.stockCritical : AppColors.accentAmber)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  _isBug ? Icons.bug_report_outlined : Icons.lightbulb_outline,
+                  color: _isBug ? AppColors.stockCritical : AppColors.accentAmber,
+                  size: 20,
+                ),
+              ),
+              const Gap(12),
+              Text(
+                _title,
+                style: TextStyle(
+                  fontFamily: _isAr ? kCairoFont : null,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const Gap(16),
+          // Message field
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            maxLines: 5,
+            minLines: 4,
+            textDirection: _isAr ? TextDirection.rtl : TextDirection.ltr,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textPrimary,
+            ),
+            decoration: InputDecoration(
+              hintText: _hint,
+              hintStyle: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textMuted,
+              ),
+              filled: true,
+              fillColor: AppColors.surfaceElevated,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.divider),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.divider),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    const BorderSide(color: AppColors.accent, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.all(14),
+            ),
+          ),
+          const Gap(12),
+          // Note
+          Text(
+            _isAr
+                ? 'سيتم فتح تطبيق البريد الإلكتروني لإرسال رسالتك مباشرة إلى الفريق.'
+                : 'Votre client email s\'ouvrira pour envoyer votre message directement à l\'équipe.',
+            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+            textAlign: _isAr ? TextAlign.right : TextAlign.left,
+          ),
+          const Gap(16),
+          // Buttons
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                    side: const BorderSide(color: AppColors.divider),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text(_isAr ? 'إلغاء' : 'Annuler'),
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: _sending ? null : _send,
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_outlined, size: 16),
+                  label: Text(
+                    _isAr ? 'إرسال' : 'Envoyer',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
