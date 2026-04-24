@@ -1,7 +1,7 @@
 name: servepoint
 description: ServePoint — Professional Offline-First POS System for Restaurants & Cafes
 publish_to: "none"
-version: 1.0.0+13
+version: 1.0.0+48
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -60,6 +60,10 @@ dependencies:
   flutter_local_notifications: ^18.0.0
   firebase_auth: ^5.7.0
   google_sign_in: ^6.2.1
+  url_launcher: ^6.3.1
+  http: ^1.2.2
+  crypto: ^3.0.3
+  in_app_purchase: ^3.2.0
 
 dependency_overrides:
   # path_provider_foundation 2.6.0 introduced objective_c (macOS/iOS native pkg)
@@ -75,7 +79,6 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.14.3
   msix: ^3.16.8
-  in_app_purchase: ^3.2.0
 
 flutter:
   uses-material-design: true
@@ -97,7 +100,7 @@ msix_config:
   publisher_display_name: ServePoint POS
   identity_name: ServePointPOS.ServePointPOS
   publisher: CN=ED7311EE-ACC2-47EB-9885-53EBB96DE3DD
-  msix_version: 1.0.0.0
+  msix_version: 1.0.2.0
   logo_path: assets/icon/app_icon.png
   start_menu_icon_path: assets/icon/app_icon.png
   tile_icon_path: assets/icon/app_icon.png
