@@ -9,7 +9,8 @@ import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../shared/providers/app_providers.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../qr_menu/presentation/screens/qr_menu_screen.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
@@ -884,27 +885,34 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
     if (msg.isEmpty) return;
     setState(() => _sending = true);
 
-    final subject = _isBug ? 'Bug Report — ServePoint POS' : 'Feature Request — ServePoint POS';
-    final body = Uri.encodeComponent(msg);
-    final uri = Uri.parse(
-        'mailto:digiforcebusiness@gmail.com?subject=${Uri.encodeComponent(subject)}&body=$body');
-
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-        if (mounted) Navigator.pop(context);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_isAr
-                  ? 'لم يتم العثور على تطبيق بريد إلكتروني. تواصل معنا على digiforcebusiness@gmail.com'
-                  : 'Aucune application email trouvée. Contactez-nous à digiforcebusiness@gmail.com'),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
+      await FirebaseFirestore.instance.collection('feedback').add({
+        'type': _isBug ? 'bug' : 'feature',
+        'message': msg,
+        'locale': widget.locale,
+        'uid': FirebaseAuth.instance.currentUser?.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'new',
+      });
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isAr ? 'تم إرسال رسالتك. شكراً!' : 'Message envoyé. Merci !'),
+            backgroundColor: AppColors.accentGreen,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: AppColors.stockCritical,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _sending = false);
