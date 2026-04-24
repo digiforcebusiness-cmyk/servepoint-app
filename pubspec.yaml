@@ -1,7 +1,7 @@
 name: servepoint
 description: ServePoint — Professional Offline-First POS System for Restaurants & Cafes
 publish_to: "none"
-version: 1.0.0+100
+version: 1.0.0+500
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

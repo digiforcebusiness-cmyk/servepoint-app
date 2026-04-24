@@ -38,14 +38,14 @@ workflows:
 
       - name: Set iOS build number
         script: |
-          NEXT_BUILD=$(expr $BUILD_NUMBER + 100)
-          echo "CFBundleVersion will be: $NEXT_BUILD"
-          cd ios && agvtool new-version -all $NEXT_BUILD && cd ..
+          NEXT_BUILD=500
+          echo "Setting CFBundleVersion to $NEXT_BUILD"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT_BUILD" ios/Runner/Info.plist
+          cat ios/Runner/Info.plist | grep -A1 CFBundleVersion
 
       - name: Build iOS release IPA
         script: |
-          NEXT_BUILD=$(expr $BUILD_NUMBER + 100)
-          flutter build ipa --release --build-number $NEXT_BUILD --export-options-plist=/Users/builder/export_options.plist
+          flutter build ipa --release --build-number 500 --export-options-plist=/Users/builder/export_options.plist
 
     artifacts:
       - build/ios/ipa/*.ipa
