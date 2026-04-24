@@ -36,18 +36,16 @@ workflows:
         script: |
           cd ios && pod install
 
-      - name: Set iOS build number
+      - name: Clean DerivedData and set build number
         script: |
           set -e
-          # Delete stale version.plist — persists on reused Codemagic Macs and overrides everything
+          # Wipe Xcode DerivedData — stale cached binaries survive across builds on shared Macs
+          rm -rf ~/Library/Developer/Xcode/DerivedData
           find . -name "version.plist" -delete 2>/dev/null || true
-          echo "Deleted stale version.plist (if any)"
-          # agvtool is the only tool that works with VERSIONING_SYSTEM=apple-generic in project.pbxproj
-          cd ios && agvtool new-version -all 500 && cd ..
-          # Belt-and-suspenders: also write directly to Info.plist
+          echo "DerivedData wiped, stale version.plist removed"
+          # Write CFBundleVersion directly into the source Info.plist (VERSIONING_SYSTEM removed from project)
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 500" ios/Runner/Info.plist
-          echo "--- Verification ---"
-          echo "Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
+          echo "CFBundleVersion set to: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
 
       - name: Build iOS release IPA
         script: |
