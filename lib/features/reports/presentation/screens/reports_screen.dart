@@ -1,8 +1,14 @@
+import 'dart:io';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../../../core/database/app_database.dart';
 import '../../../../core/l10n/app_strings.dart';
@@ -109,18 +115,90 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   _Period _period = _Period.today;
+  bool _exporting = false;
+
+  Future<void> _exportPdf(_PeriodStats stats, String locale) async {
+    setState(() => _exporting = true);
+    try {
+      final branding = await ref.read(brandingProvider.future);
+      final currency = CurrencyFormatter.currentCurrency;
+      final (start, _) = _rangeFor(_period);
+
+      final periodLabel = switch (_period) {
+        _Period.today => locale == 'ar' ? 'اليوم' : "Aujourd'hui",
+        _Period.week => locale == 'ar' ? 'هذا الأسبوع' : 'Cette semaine',
+        _Period.month => locale == 'ar' ? 'هذا الشهر' : 'Ce mois',
+      };
+
+      final doc = await _buildReportPdf(
+        stats: stats,
+        locale: locale,
+        storeName: branding.storeName,
+        currency: currency,
+        periodLabel: periodLabel,
+        date: start,
+      );
+
+      final bytes = await doc.save();
+
+      Directory? dir;
+      try {
+        dir = await getDownloadsDirectory();
+      } catch (_) {}
+      dir ??= await getApplicationDocumentsDirectory();
+
+      final slug = switch (_period) {
+        _Period.today => 'today',
+        _Period.week => 'week',
+        _Period.month => 'month',
+      };
+      final fileName =
+          'report_${slug}_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf';
+      final file =
+          File('${dir.path}${Platform.pathSeparator}$fileName');
+      await file.writeAsBytes(bytes);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              locale == 'ar'
+                  ? 'تم حفظ التقرير: ${file.path}'
+                  : 'Rapport sauvegardé : ${file.path}',
+            ),
+            backgroundColor: AppColors.accentGreen,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur export: $e'),
+            backgroundColor: AppColors.stockCritical,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final locale = ref.watch(appLocaleProvider);
     final statsAsync = ref.watch(reportStatsProvider(_period));
+    final stats = statsAsync.value;
 
     return Column(
       children: [
         // Header bar
         Container(
           color: AppColors.primary,
-          padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
           child: Row(
             children: [
               const Icon(Icons.bar_chart, color: AppColors.accent, size: 20),
@@ -144,6 +222,37 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 locale: locale,
                 onChanged: (p) => setState(() => _period = p),
               ),
+              const Gap(4),
+              // Download button — enabled only when data is ready
+              _exporting
+                  ? const SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.accent,
+                          ),
+                        ),
+                      ),
+                    )
+                  : IconButton(
+                      onPressed:
+                          stats != null ? () => _exportPdf(stats, locale) : null,
+                      icon: const Icon(Icons.download_outlined),
+                      color: stats != null
+                          ? AppColors.accent
+                          : AppColors.textMuted,
+                      iconSize: 20,
+                      tooltip: locale == 'ar'
+                          ? 'تنزيل PDF'
+                          : 'Télécharger PDF',
+                      padding: const EdgeInsets.all(6),
+                      constraints: const BoxConstraints(),
+                    ),
             ],
           ),
         ),
@@ -166,6 +275,357 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ),
       ],
     );
+  }
+}
+
+// ─── PDF Builder ──────────────────────────────────────────────────────────────
+
+Future<pw.Document> _buildReportPdf({
+  required _PeriodStats stats,
+  required String locale,
+  required String storeName,
+  required String currency,
+  required String periodLabel,
+  required DateTime date,
+}) async {
+  final isAr = locale == 'ar';
+
+  // Fonts — Cairo covers Arabic + Latin; Nunito for Latin-only locales.
+  final pw.Font regular;
+  final pw.Font bold;
+  final pw.Font extraBold;
+  if (isAr) {
+    regular = await PdfGoogleFonts.cairoRegular();
+    bold = await PdfGoogleFonts.cairoBold();
+    extraBold = await PdfGoogleFonts.cairoExtraBold();
+  } else {
+    regular = await PdfGoogleFonts.nunitoRegular();
+    bold = await PdfGoogleFonts.nunitoBold();
+    extraBold = await PdfGoogleFonts.nunitoExtraBold();
+  }
+
+  const accent = PdfColor.fromInt(0xFFE94560);
+  const dark = PdfColor.fromInt(0xFF0D2137);
+  const muted = PdfColor.fromInt(0xFF7A8FA6);
+  const divider = PdfColor.fromInt(0xFFE2E8F0);
+  const green = PdfColor.fromInt(0xFF22C55E);
+  const amber = PdfColor.fromInt(0xFFF59E0B);
+
+  pw.TextStyle ts(double size,
+          {pw.Font? font,
+          PdfColor color = const PdfColor(0.06, 0.13, 0.22),
+          pw.FontWeight fw = pw.FontWeight.normal}) =>
+      pw.TextStyle(
+        font: font ?? regular,
+        fontSize: size,
+        color: color,
+        fontWeight: fw,
+      );
+
+  String fmt(double v) =>
+      '${v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2)} $currency';
+
+  // Payment labels
+  final payLabels = {
+    'cash': isAr ? 'نقداً' : 'Espèces',
+    'card': isAr ? 'بطاقة' : 'Carte',
+    'mobile': isAr ? 'موبايل' : 'Mobile',
+  };
+
+  final doc = pw.Document(title: 'Rapport $periodLabel');
+
+  doc.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      textDirection: isAr ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+      margin: const pw.EdgeInsets.all(32),
+      build: (ctx) => [
+        // ── Header ────────────────────────────────────────────────────────
+        pw.Container(
+          padding: const pw.EdgeInsets.all(16),
+          decoration: pw.BoxDecoration(
+            color: dark,
+            borderRadius: pw.BorderRadius.circular(10),
+          ),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(storeName,
+                      style: ts(18, font: extraBold, color: PdfColors.white)),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    isAr ? 'تقرير المبيعات — $periodLabel' : 'Rapport de ventes — $periodLabel',
+                    style: ts(10, color: const PdfColor(0.6, 0.75, 0.85)),
+                  ),
+                ],
+              ),
+              pw.Text(
+                DateFormat('dd/MM/yyyy').format(date),
+                style: ts(11, font: bold, color: const PdfColor(0.6, 0.75, 0.85)),
+              ),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 20),
+
+        // ── KPI Row ───────────────────────────────────────────────────────
+        pw.Row(children: [
+          _pdfKpi(
+            label: isAr ? 'الإيرادات' : 'Chiffre d\'affaires',
+            value: fmt(stats.revenue),
+            color: green,
+            regular: regular, bold: bold,
+          ),
+          pw.SizedBox(width: 10),
+          _pdfKpi(
+            label: isAr ? 'الطلبات' : 'Commandes',
+            value: '${stats.ordersCount}',
+            color: accent,
+            regular: regular, bold: bold,
+          ),
+          pw.SizedBox(width: 10),
+          _pdfKpi(
+            label: isAr ? 'متوسط الفاتورة' : 'Ticket moyen',
+            value: fmt(stats.avgTicket),
+            color: amber,
+            regular: regular, bold: bold,
+          ),
+          pw.SizedBox(width: 10),
+          _pdfKpi(
+            label: isAr ? 'ملغاة' : 'Annulées',
+            value: '${stats.cancelledCount}',
+            color: const PdfColor(0.91, 0.27, 0.37),
+            regular: regular, bold: bold,
+          ),
+        ]),
+        pw.SizedBox(height: 20),
+
+        // ── Payment Breakdown ─────────────────────────────────────────────
+        _pdfSectionTitle(isAr ? 'المدفوعات' : 'Répartition des paiements',
+            bold: bold),
+        pw.SizedBox(height: 8),
+        pw.Table(
+          border: pw.TableBorder.all(color: divider, width: 0.5),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(3),
+            1: const pw.FlexColumnWidth(2),
+            2: const pw.FlexColumnWidth(2),
+          },
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColor(0.94, 0.96, 0.99)),
+              children: [
+                _pdfCell(isAr ? 'وسيلة الدفع' : 'Méthode', bold, isHeader: true),
+                _pdfCell(isAr ? 'المبلغ' : 'Montant', bold, isHeader: true),
+                _pdfCell(isAr ? 'النسبة' : 'Part', bold, isHeader: true),
+              ],
+            ),
+            for (final method in ['cash', 'card', 'mobile']) ...[
+              pw.TableRow(children: [
+                _pdfCell(payLabels[method]!, regular),
+                _pdfCell(fmt(stats.paymentBreakdown[method] ?? 0), regular),
+                _pdfCell(
+                  stats.revenue > 0
+                      ? '${((stats.paymentBreakdown[method] ?? 0) / stats.revenue * 100).toStringAsFixed(1)}%'
+                      : '—',
+                  regular,
+                ),
+              ]),
+            ],
+          ],
+        ),
+        pw.SizedBox(height: 20),
+
+        // ── Top Products ──────────────────────────────────────────────────
+        if (stats.topProducts.isNotEmpty) ...[
+          _pdfSectionTitle(
+              isAr ? 'أفضل المنتجات' : 'Produits les plus vendus',
+              bold: bold),
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder.all(color: divider, width: 0.5),
+            columnWidths: {
+              0: const pw.FixedColumnWidth(24),
+              1: const pw.FlexColumnWidth(4),
+              2: const pw.FlexColumnWidth(1.5),
+              3: const pw.FlexColumnWidth(2),
+            },
+            children: [
+              pw.TableRow(
+                decoration:
+                    const pw.BoxDecoration(color: PdfColor(0.94, 0.96, 0.99)),
+                children: [
+                  _pdfCell('#', bold, isHeader: true),
+                  _pdfCell(isAr ? 'المنتج' : 'Produit', bold, isHeader: true),
+                  _pdfCell(isAr ? 'الكمية' : 'Qté', bold, isHeader: true),
+                  _pdfCell(isAr ? 'الإيراد' : 'CA', bold, isHeader: true),
+                ],
+              ),
+              for (int i = 0; i < stats.topProducts.length; i++) ...[
+                pw.TableRow(
+                  decoration: i.isEven
+                      ? null
+                      : const pw.BoxDecoration(
+                          color: PdfColor(0.98, 0.98, 0.99)),
+                  children: [
+                    _pdfCell('${i + 1}', regular),
+                    _pdfCell(
+                      isAr
+                          ? (stats.topProducts[i]['nameAr'] as String).isNotEmpty
+                              ? stats.topProducts[i]['nameAr'] as String
+                              : stats.topProducts[i]['nameFr'] as String
+                          : stats.topProducts[i]['nameFr'] as String,
+                      regular,
+                    ),
+                    _pdfCell(
+                        '× ${stats.topProducts[i]['totalQty']}', regular),
+                    _pdfCell(
+                        fmt((stats.topProducts[i]['totalRevenue'] as num)
+                            .toDouble()),
+                        regular),
+                  ],
+                ),
+              ],
+            ],
+          ),
+          pw.SizedBox(height: 20),
+        ],
+
+        // ── Top Orders ────────────────────────────────────────────────────
+        if (stats.topOrders.isNotEmpty) ...[
+          _pdfSectionTitle(
+              isAr ? 'أعلى الطلبات' : 'Meilleures commandes',
+              bold: bold),
+          pw.SizedBox(height: 8),
+          pw.Table(
+            border: pw.TableBorder.all(color: divider, width: 0.5),
+            columnWidths: {
+              0: const pw.FixedColumnWidth(24),
+              1: const pw.FlexColumnWidth(1.5),
+              2: const pw.FlexColumnWidth(2.5),
+              3: const pw.FlexColumnWidth(1.5),
+              4: const pw.FlexColumnWidth(2),
+            },
+            children: [
+              pw.TableRow(
+                decoration:
+                    const pw.BoxDecoration(color: PdfColor(0.94, 0.96, 0.99)),
+                children: [
+                  _pdfCell('#', bold, isHeader: true),
+                  _pdfCell(isAr ? 'رقم' : 'N°', bold, isHeader: true),
+                  _pdfCell(isAr ? 'النوع' : 'Type', bold, isHeader: true),
+                  _pdfCell(isAr ? 'الدفع' : 'Paiement', bold, isHeader: true),
+                  _pdfCell(isAr ? 'المجموع' : 'Total', bold, isHeader: true),
+                ],
+              ),
+              for (int i = 0; i < stats.topOrders.length; i++) ...[
+                pw.TableRow(
+                  decoration: i.isEven
+                      ? null
+                      : const pw.BoxDecoration(
+                          color: PdfColor(0.98, 0.98, 0.99)),
+                  children: [
+                    _pdfCell('${i + 1}', regular),
+                    _pdfCell('#${stats.topOrders[i].id}', regular),
+                    _pdfCell(_orderTypeLabel(stats.topOrders[i], isAr),
+                        regular),
+                    _pdfCell(
+                        payLabels[stats.topOrders[i].paymentMethod] ??
+                            stats.topOrders[i].paymentMethod ??
+                            '—',
+                        regular),
+                    _pdfCell(fmt(stats.topOrders[i].totalPrice), regular),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ],
+
+        // ── Footer ────────────────────────────────────────────────────────
+        pw.SizedBox(height: 24),
+        pw.Divider(color: divider),
+        pw.SizedBox(height: 6),
+        pw.Center(
+          child: pw.Text(
+            'ServePoint POS — ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+            style: ts(8, color: muted),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  return doc;
+}
+
+pw.Widget _pdfKpi({
+  required String label,
+  required String value,
+  required PdfColor color,
+  required pw.Font regular,
+  required pw.Font bold,
+}) =>
+    pw.Expanded(
+      child: pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: const PdfColor(0.88, 0.92, 0.96)),
+          borderRadius: pw.BorderRadius.circular(8),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(value,
+                style: pw.TextStyle(
+                    font: bold, fontSize: 16, color: color)),
+            pw.SizedBox(height: 2),
+            pw.Text(label,
+                style: pw.TextStyle(
+                    font: regular, fontSize: 8,
+                    color: const PdfColor(0.47, 0.56, 0.64))),
+          ],
+        ),
+      ),
+    );
+
+pw.Widget _pdfSectionTitle(String text, {required pw.Font bold}) =>
+    pw.Text(text,
+        style: pw.TextStyle(
+            font: bold,
+            fontSize: 12,
+            color: const PdfColor(0.06, 0.13, 0.22)));
+
+pw.Widget _pdfCell(String text, pw.Font font,
+    {bool isHeader = false}) =>
+    pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          font: font,
+          fontSize: 9,
+          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+          color: isHeader
+              ? const PdfColor(0.06, 0.13, 0.22)
+              : const PdfColor(0.2, 0.28, 0.36),
+        ),
+      ),
+    );
+
+String _orderTypeLabel(Order order, bool isAr) {
+  switch (order.orderType) {
+    case 'surPlace':
+      return order.tableNumber != null
+          ? (isAr ? 'طاولة ${order.tableNumber}' : 'Table ${order.tableNumber}')
+          : (isAr ? 'في المحل' : 'Sur place');
+    case 'emporter':
+      return isAr ? 'للأخذ' : 'À emporter';
+    default:
+      return isAr ? 'توصيل' : 'Livraison';
   }
 }
 
