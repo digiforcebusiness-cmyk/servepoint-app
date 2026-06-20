@@ -20,6 +20,7 @@ class OrderPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final locale = ref.watch(appLocaleProvider);
     final order = ref.watch(activeOrderProvider);
     final size = MediaQuery.sizeOf(context);
@@ -27,10 +28,10 @@ class OrderPanel extends ConsumerWidget {
     final isCompact = size.width > size.height;
 
     return Container(
-      color: AppColors.surfaceCard,
+      color: c.surfaceCard,
       child: Column(
         children: [
-          _buildHeader(locale, order, compact: isCompact),
+          _buildHeader(c, locale, order, compact: isCompact),
           // Serveur + Client row
           _ServeurClientBar(locale: locale),
           // Ticket title input — hidden in landscape to save vertical space
@@ -50,12 +51,12 @@ class OrderPanel extends ConsumerWidget {
     );
   }
 
-  Widget _buildHeader(String locale, ActiveOrderState order, {bool compact = false}) {
+  Widget _buildHeader(AppColorTokens c, String locale, ActiveOrderState order, {bool compact = false}) {
     return Container(
       padding: EdgeInsets.fromLTRB(12, compact ? 3 : 5, 12, compact ? 3 : 5),
-      decoration: const BoxDecoration(
-        color: AppColors.surfaceCard,
-        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      decoration: BoxDecoration(
+        color: c.surfaceCard,
+        border: Border(bottom: BorderSide(color: c.divider)),
       ),
       child: Row(
         children: [
@@ -78,17 +79,17 @@ class OrderPanel extends ConsumerWidget {
                   order.tableNumber != null
                       ? '${AppStrings.t('table_prefix', locale)} ${order.tableNumber}'
                       : AppStrings.t('order', locale),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
-                    color: AppColors.textPrimary,
+                    color: c.textPrimary,
                   ),
                 ),
                 if (order.orderId != null)
                   Text(
                     '#${order.orderId}',
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textMuted),
+                    style: TextStyle(
+                        fontSize: 11, color: c.textMuted),
                   ),
               ],
             ),
@@ -121,6 +122,7 @@ class OrderPanel extends ConsumerWidget {
     ActiveOrderState order, {
     bool compact = false,
   }) {
+    final c = AppColors.of(context);
     if (!order.hasOrder || order.items.isEmpty) return const SizedBox.shrink();
 
     final hasDiscount = order.discountPercent > 0 || order.discountFixed > 0;
@@ -137,9 +139,9 @@ class OrderPanel extends ConsumerWidget {
 
     return Container(
       padding: EdgeInsets.all(outerPad),
-      decoration: const BoxDecoration(
-        color: AppColors.surfaceCard,
-        border: Border(top: BorderSide(color: AppColors.divider)),
+      decoration: BoxDecoration(
+        color: c.surfaceCard,
+        border: Border(top: BorderSide(color: c.divider)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -158,7 +160,7 @@ class OrderPanel extends ConsumerWidget {
             ),
           ],
           Divider(
-              color: AppColors.divider,
+              color: c.divider,
               height: dividerHeight,
               thickness: 1),
           Row(
@@ -166,10 +168,10 @@ class OrderPanel extends ConsumerWidget {
             children: [
               Text(
                 AppStrings.t('total', locale),
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 15,
-                  color: AppColors.textPrimary,
+                  color: c.textPrimary,
                 ),
               ),
               Text(
@@ -223,6 +225,7 @@ class OrderPanel extends ConsumerWidget {
   }
 
   void _confirmCancel(BuildContext context, WidgetRef ref, String locale) {
+    final c = AppColors.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -232,7 +235,7 @@ class OrderPanel extends ConsumerWidget {
         ),
         content: Text(
           AppStrings.t('cancel_order_panel_body', locale),
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: TextStyle(color: c.textSecondary),
         ),
         actions: [
           TextButton(
@@ -304,6 +307,7 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final locale = widget.locale;
     // Sync server name controller when it loads from DB
     ref.listen(serverNameProvider, (prev, next) {
@@ -324,9 +328,9 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
     final savedNames = ref.watch(serverNamesListProvider);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surfaceCard,
-        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      decoration: BoxDecoration(
+        color: c.surfaceCard,
+        border: Border(bottom: BorderSide(color: c.divider)),
       ),
       padding: EdgeInsets.symmetric(horizontal: 10, vertical: isCompact ? 1 : 3),
       child: Row(
@@ -358,7 +362,7 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
             ),
           ),
           const Gap(8),
-          Container(width: 1, height: 32, color: AppColors.divider),
+          Container(width: 1, height: 32, color: c.divider),
           const Gap(8),
           // Client field
           Expanded(
@@ -379,10 +383,11 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
 
   void _showServerPicker(
       BuildContext context, List<String> names, String locale) {
+    final c = AppColors.of(context);
     final isAr = locale == 'ar';
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surfaceCard,
+      backgroundColor: c.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -397,7 +402,7 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.divider,
+                  color: c.divider,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -405,10 +410,10 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
             const Gap(12),
             Text(
               isAr ? 'اختر الخادم' : 'Choisir le serveur',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: AppColors.textSecondary,
+                color: c.textSecondary,
               ),
             ),
             const Gap(12),
@@ -428,12 +433,12 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
                     decoration: BoxDecoration(
                       color: isCurrent
                           ? AppColors.accent.withValues(alpha: 0.15)
-                          : AppColors.surfaceElevated,
+                          : c.surfaceElevated,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: isCurrent
                             ? AppColors.accent
-                            : AppColors.divider,
+                            : c.divider,
                       ),
                     ),
                     child: Text(
@@ -443,7 +448,7 @@ class _ServeurClientBarState extends ConsumerState<_ServeurClientBar> {
                         fontWeight: FontWeight.w600,
                         color: isCurrent
                             ? AppColors.accent
-                            : AppColors.textPrimary,
+                            : c.textPrimary,
                       ),
                     ),
                   ),
@@ -474,6 +479,7 @@ class _LabeledField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final size = MediaQuery.sizeOf(context);
     final isCompact = size.width > size.height;
     return Column(
@@ -483,14 +489,14 @@ class _LabeledField extends StatelessWidget {
         if (!isCompact)
           Row(
             children: [
-              Icon(icon, size: 11, color: AppColors.textMuted),
+              Icon(icon, size: 11, color: c.textMuted),
               const Gap(3),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted),
+                    color: c.textMuted),
               ),
             ],
           ),
@@ -500,33 +506,33 @@ class _LabeledField extends StatelessWidget {
           child: TextField(
             controller: controller,
             onChanged: onChanged,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary),
+                color: c.textPrimary),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(
-                  fontSize: 12, color: AppColors.textMuted),
+              hintStyle: TextStyle(
+                  fontSize: 12, color: c.textMuted),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               isDense: true,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
                 borderSide:
-                    const BorderSide(color: AppColors.border, width: 1),
+                    BorderSide(color: c.border, width: 1),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
                 borderSide:
-                    const BorderSide(color: AppColors.border, width: 1),
+                    BorderSide(color: c.border, width: 1),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
                 borderSide:
                     const BorderSide(color: AppColors.accent, width: 1.5),
               ),
-              fillColor: AppColors.surfaceElevated,
+              fillColor: c.surfaceElevated,
               filled: true,
             ),
           ),
@@ -564,6 +570,7 @@ class _TicketTitleBarState extends ConsumerState<_TicketTitleBar> {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final locale = widget.locale;
     ref.listen(activeOrderProvider, (prev, next) {
       if (next.ticketTitle != _ctrl.text) {
@@ -572,15 +579,15 @@ class _TicketTitleBarState extends ConsumerState<_TicketTitleBar> {
     });
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      decoration: BoxDecoration(
+        color: c.background,
+        border: Border(bottom: BorderSide(color: c.divider)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       child: Row(
         children: [
           Icon(Icons.edit_note_outlined,
-              size: 18, color: AppColors.textMuted),
+              size: 18, color: c.textMuted),
           const Gap(8),
           Expanded(
             child: TextField(
@@ -588,15 +595,15 @@ class _TicketTitleBarState extends ConsumerState<_TicketTitleBar> {
               onChanged: (v) => ref
                   .read(activeOrderProvider.notifier)
                   .setTicketTitle(v),
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textPrimary),
+              style: TextStyle(
+                  fontSize: 13, color: c.textPrimary),
               decoration: InputDecoration(
                 hintText: locale == 'ar'
                     ? 'أعطِ عنواناً لطلبك...'
                     : 'Donnez un titre à votre ticket...',
-                hintStyle: const TextStyle(
+                hintStyle: TextStyle(
                     fontSize: 12,
-                    color: AppColors.textMuted,
+                    color: c.textMuted,
                     fontStyle: FontStyle.italic),
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 0, vertical: 4),
@@ -628,12 +635,13 @@ class _OrderItemsList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     return ListView.separated(
       controller: scrollController,
       padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: items.length,
       separatorBuilder: (_, __) =>
-          const Divider(height: 1, color: AppColors.divider),
+          Divider(height: 1, color: c.divider),
       itemBuilder: (_, index) => _OrderItemTile(
         item: items[index],
         locale: locale,
@@ -650,6 +658,7 @@ class _OrderItemTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     return Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
@@ -684,7 +693,7 @@ class _OrderItemTile extends ConsumerWidget {
                       fontFamily: locale == 'ar' ? kCairoFont : null,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                      color: c.textPrimary,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -692,9 +701,9 @@ class _OrderItemTile extends ConsumerWidget {
                   if (item.notes != null && item.notes!.isNotEmpty)
                     Text(
                       item.notes!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: AppColors.textMuted,
+                        color: c.textMuted,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -704,10 +713,10 @@ class _OrderItemTile extends ConsumerWidget {
             const Gap(8),
             Text(
               CurrencyFormatter.format(item.lineTotal, locale: locale),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: c.textPrimary,
               ),
             ),
           ],
@@ -724,6 +733,7 @@ class _QtyControls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -737,10 +747,10 @@ class _QtyControls extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Text(
             '${item.quantity}',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+              color: c.textPrimary,
             ),
           ),
         ),
@@ -765,22 +775,23 @@ class _QtyBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-          color: (color ?? AppColors.textMuted).withValues(alpha: 0.08),
+          color: (color ?? c.textMuted).withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(7),
           border: Border.all(
-            color: (color ?? AppColors.border).withValues(alpha: 0.5),
+            color: (color ?? c.border).withValues(alpha: 0.5),
           ),
         ),
         child: Icon(
           icon,
           size: 14,
-          color: color ?? AppColors.textSecondary,
+          color: color ?? c.textSecondary,
         ),
       ),
     );
@@ -798,18 +809,19 @@ class _TotalRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label,
-            style: const TextStyle(
-                fontSize: 13, color: AppColors.textSecondary)),
+            style: TextStyle(
+                fontSize: 13, color: c.textSecondary)),
         Text(
           value,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: valueColor ?? AppColors.textPrimary,
+            color: valueColor ?? c.textPrimary,
           ),
         ),
       ],
@@ -825,6 +837,7 @@ class _EmptyOrderState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -833,18 +846,18 @@ class _EmptyOrderState extends StatelessWidget {
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
+              color: c.surfaceElevated,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.shopping_bag_outlined,
-                size: 32, color: AppColors.textMuted),
+            child: Icon(Icons.shopping_bag_outlined,
+                size: 32, color: c.textMuted),
           ),
           const Gap(12),
           Text(
             AppStrings.t('empty_order', locale),
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 14,
-                color: AppColors.textSecondary,
+                color: c.textSecondary,
                 fontWeight: FontWeight.w600),
           ),
           const Gap(6),
@@ -852,7 +865,7 @@ class _EmptyOrderState extends StatelessWidget {
             locale == 'ar'
                 ? 'اضغط على منتج لإضافته'
                 : 'Tapez sur un produit pour l\'ajouter',
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: c.textMuted),
             textAlign: TextAlign.center,
           ),
         ],
@@ -972,10 +985,11 @@ class _ReceiptPreviewDialogState
 
   Widget _buildPaymentPanel(
       BuildContext context, String locale, double change, bool isCash) {
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AppColors.divider)),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: c.divider)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -984,11 +998,11 @@ class _ReceiptPreviewDialogState
           TextField(
             controller: _tableCtrl,
             keyboardType: TextInputType.number,
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+            style: TextStyle(color: c.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               labelText: AppStrings.t('table_number_label', locale),
-              prefixIcon: const Icon(Icons.table_restaurant_outlined,
-                  color: AppColors.textMuted, size: 18),
+              prefixIcon: Icon(Icons.table_restaurant_outlined,
+                  color: c.textMuted, size: 18),
               isDense: true,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1040,12 +1054,12 @@ class _ReceiptPreviewDialogState
                     controller: _amountCtrl,
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
-                    style: const TextStyle(
-                        color: AppColors.textPrimary, fontSize: 13),
+                    style: TextStyle(
+                        color: c.textPrimary, fontSize: 13),
                     decoration: InputDecoration(
                       labelText: AppStrings.t('amount_received_label', locale),
-                      prefixIcon: const Icon(Icons.payments_outlined,
-                          color: AppColors.textMuted, size: 18),
+                      prefixIcon: Icon(Icons.payments_outlined,
+                          color: c.textMuted, size: 18),
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 8),
@@ -1073,8 +1087,8 @@ class _ReceiptPreviewDialogState
                       children: [
                         Text(
                           AppStrings.t('receipt_change', locale),
-                          style: const TextStyle(
-                              fontSize: 10, color: AppColors.textMuted),
+                          style: TextStyle(
+                              fontSize: 10, color: c.textMuted),
                         ),
                         Text(
                           change >= 0
@@ -1109,8 +1123,8 @@ class _ReceiptPreviewDialogState
                   label: Text(AppStrings.t('back_btn', locale),
                       style: const TextStyle(fontSize: 12)),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textSecondary,
-                    side: const BorderSide(color: AppColors.border),
+                    foregroundColor: c.textSecondary,
+                    side: BorderSide(color: c.border),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
@@ -1183,6 +1197,7 @@ class _ReceiptPreviewDialogState
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final locale = widget.locale;
     final size = MediaQuery.sizeOf(context);
     final isLandscape = size.width > size.height;
@@ -1221,7 +1236,7 @@ class _ReceiptPreviewDialogState
     final paymentPanel = _buildPaymentPanel(context, locale, change, isCash);
 
     return Dialog(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       insetPadding: EdgeInsets.symmetric(
         horizontal: isLandscape ? 16 : 20,
         vertical: isLandscape ? 12 : 24,
@@ -1237,7 +1252,7 @@ class _ReceiptPreviewDialogState
                     // Left: scrollable receipt preview
                     Expanded(
                       child: Container(
-                        color: AppColors.background,
+                        color: c.background,
                         child: receiptPreview,
                       ),
                     ),
@@ -1245,7 +1260,7 @@ class _ReceiptPreviewDialogState
                     SizedBox(
                       width: 310,
                       child: Container(
-                        color: AppColors.surfaceCard,
+                        color: c.surfaceCard,
                         child: SingleChildScrollView(child: paymentPanel),
                       ),
                     ),
@@ -1255,19 +1270,24 @@ class _ReceiptPreviewDialogState
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Top: receipt preview constrained to 45% screen height
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: size.height * 0.45,
-                    ),
-                    child: Container(
-                      color: AppColors.background,
-                      child: receiptPreview,
+                  // Top: receipt preview — capped at 45% of screen height,
+                  // and allowed to shrink further when the payment panel
+                  // needs the room (prevents a bottom overflow on short
+                  // screens).
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: size.height * 0.45,
+                      ),
+                      child: Container(
+                        color: c.background,
+                        child: receiptPreview,
+                      ),
                     ),
                   ),
                   // Bottom: payment panel
                   Container(
-                    color: AppColors.surfaceCard,
+                    color: c.surfaceCard,
                     child: paymentPanel,
                   ),
                 ],
@@ -1547,6 +1567,7 @@ class _PayMethodBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -1556,23 +1577,23 @@ class _PayMethodBtn extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected
                 ? color.withValues(alpha: 0.12)
-                : AppColors.surfaceElevated,
+                : c.surfaceElevated,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: selected ? color : AppColors.border,
+              color: selected ? color : c.border,
               width: selected ? 2 : 1,
             ),
           ),
           child: Column(
             children: [
               Icon(icon,
-                  color: selected ? color : AppColors.textMuted, size: 20),
+                  color: selected ? color : c.textMuted, size: 20),
               const Gap(3),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 11,
-                  color: selected ? color : AppColors.textSecondary,
+                  color: selected ? color : c.textSecondary,
                   fontWeight: FontWeight.w600,
                 ),
               ),

@@ -1,21 +1,25 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:flutter/services.dart';
 
-/// The Microsoft Store Add-on Store ID for ServePoint Pro.
-/// This is the auto-generated Store ID from Partner Center → Add-ons → servepoint_pro_monthly.
-const kWindowsProProductId = '9NP8JK6X73SJ';
+/// The Microsoft Store Add-on Store ID for the ServePoint Pro monthly
+/// subscription (`servepoint_pro_monthly_access`, $4.99/mo). Replaces the
+/// earlier `9NP8JK6X73SJ` add-on, which could never be priced (Store offered
+/// only "Free") and was abandoned.
+const kWindowsProProductId = '9P7QBH6P9Q9F';
 
-/// Handles Microsoft Store In-App Purchases on Windows only.
+/// The Microsoft Store Add-on Store ID for the one-time lifetime unlock.
+const kWindowsLifetimeProductId = '9P2DTR0674TK';
+
+/// Handles Microsoft Store In-App Purchases on Windows only via a native
+/// platform channel backed by WinRT Windows.Services.Store APIs.
 /// Never instantiated or called on Android / iOS — all entry points are
 /// guarded by [WindowsIAPService.isSupported].
 class WindowsIAPService {
   static bool get isSupported => !kIsWeb && Platform.isWindows;
 
-  final _iap = InAppPurchase.instance;
-  StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
+  static const _channel = MethodChannel('com.servepoint/store_iap');
 
   bool _isPro = false;
   bool get isPro => _isPro;
@@ -23,107 +27,139 @@ class WindowsIAPService {
   bool _storeAvailable = false;
   bool get isStoreAvailable => _storeAvailable;
 
-  final _proController = StreamController<bool>.broadcast();
-
-  /// Emits whenever Pro status changes (purchase or restore confirmed).
-  Stream<bool> get proStream => _proController.stream;
-
   // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
   Future<void> initialize() async {
     if (!isSupported) return;
     try {
-      if (!await _iap.isAvailable()) {
-        debugPrint('[WindowsIAP] Microsoft Store not available on this device.');
+      final available = await _channel.invokeMethod<bool>('isAvailable') ?? false;
+      if (!available) {
+        debugPrint('[WindowsIAP] Not running as MSIX package — IAP unavailable.');
         return;
       }
+      _storeAvailable = true;
+      _isPro = await _checkLicense();
+      debugPrint('[WindowsIAP] Initialized. isPro=$_isPro');
     } catch (e) {
-      // Platform implementation not registered — running outside the Store
-      // (e.g. flutter run debug). IAP silently unavailable.
-      debugPrint('[WindowsIAP] IAP platform not registered: $e');
-      return;
+      debugPrint('[WindowsIAP] Initialize error: $e');
     }
-
-    _storeAvailable = true;
-    _purchaseSub = _iap.purchaseStream.listen(
-      _onPurchaseUpdate,
-      onError: (e) => debugPrint('[WindowsIAP] Stream error: $e'),
-    );
-
-    // Silently restore on start-up so returning subscribers are recognised.
-    await _iap.restorePurchases();
   }
 
-  void dispose() {
-    _purchaseSub?.cancel();
-    _proController.close();
-  }
+  void dispose() {}
 
-  // ─── Purchase stream handler ────────────────────────────────────────────────
+  // ─── Internal helpers ───────────────────────────────────────────────────────
 
-  void _onPurchaseUpdate(List<PurchaseDetails> purchases) {
-    for (final p in purchases) {
-      if (p.productID != kWindowsProProductId) continue;
-
-      switch (p.status) {
-        case PurchaseStatus.purchased:
-        case PurchaseStatus.restored:
-          _isPro = true;
-          _proController.add(true);
-          if (p.pendingCompletePurchase) _iap.completePurchase(p);
-        case PurchaseStatus.error:
-          debugPrint('[WindowsIAP] Purchase error: ${p.error}');
-        case PurchaseStatus.canceled:
-          debugPrint('[WindowsIAP] Purchase cancelled by user.');
-        case PurchaseStatus.pending:
-          debugPrint('[WindowsIAP] Purchase pending.');
-      }
+  Future<bool> _checkLicense() async {
+    try {
+      return await _channel.invokeMethod<bool>('checkLicense') ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('[WindowsIAP] checkLicense error: ${e.message}');
+      return false;
     }
   }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
-  /// Fetches product details from the Microsoft Store.
-  Future<ProductDetails?> fetchProProduct() async {
-    if (!isSupported) return null;
+  /// Returns the formatted price string from the Microsoft Store, or null if
+  /// unavailable (paywall falls back to the hardcoded display price).
+  Future<String?> fetchPriceString() async {
+    if (!isSupported || !_storeAvailable) return null;
     try {
-      final response =
-          await _iap.queryProductDetails({kWindowsProProductId});
-      if (response.error != null) {
-        debugPrint('[WindowsIAP] queryProductDetails error: ${response.error}');
-      }
-      return response.productDetails.firstOrNull;
+      final price = await _channel.invokeMethod<String?>('getPriceString', {
+        'productId': kWindowsProProductId,
+      });
+      return price;
     } catch (e) {
-      debugPrint('[WindowsIAP] fetchProProduct unavailable: $e');
+      debugPrint('[WindowsIAP] fetchPriceString error: $e');
+      return null;
+    }
+  }
+
+  /// Same as [fetchPriceString] but for the lifetime durable add-on.
+  Future<String?> fetchLifetimePriceString() async {
+    if (!isSupported || !_storeAvailable) return null;
+    try {
+      final price = await _channel.invokeMethod<String?>('getPriceString', {
+        'productId': kWindowsLifetimeProductId,
+      });
+      return price;
+    } catch (e) {
+      debugPrint('[WindowsIAP] fetchLifetimePriceString error: $e');
       return null;
     }
   }
 
   /// Initiates the Microsoft Store subscription purchase flow.
-  Future<void> buyPro() async {
-    if (!isSupported) return;
+  /// Returns null on success or user cancellation; returns an error message
+  /// on a hard failure.
+  Future<String?> buyPro() async {
+    if (!isSupported) return null;
     try {
-      final product = await fetchProProduct();
-      if (product == null) {
-        debugPrint('[WindowsIAP] Product not found in Store — '
-            'make sure the Add-on is published in Partner Center.');
-        return;
+      final status = await _channel.invokeMethod<String>('purchase', {
+        'productId': kWindowsProProductId,
+      });
+      switch (status) {
+        case 'purchased':
+        case 'alreadyPurchased':
+          _isPro = true;
+          return null;
+        case 'cancelled':
+          return null;
+        case 'networkError':
+          return 'Network error. Please check your connection and try again.';
+        case 'serverError':
+          return 'Microsoft Store server error. Please try again later.';
+        default:
+          return 'Purchase did not complete ($status).';
       }
-      await _iap.buyNonConsumable(
-        purchaseParam: PurchaseParam(productDetails: product),
-      );
+    } on PlatformException catch (e) {
+      debugPrint('[WindowsIAP] buyPro error: ${e.message}');
+      return e.message ?? 'Unknown Store error.';
     } catch (e) {
-      debugPrint('[WindowsIAP] buyPro unavailable: $e');
+      debugPrint('[WindowsIAP] buyPro error: $e');
+      return e.toString();
     }
   }
 
-  /// Restores previously purchased subscriptions.
-  Future<void> restore() async {
-    if (!isSupported) return;
+  /// Initiates the Microsoft Store one-time lifetime durable purchase flow.
+  /// Returns null on success or user cancellation; returns an error message
+  /// on a hard failure. On a successful purchase, [_isPro] flips to true —
+  /// the native `checkLicense` already counts a lifetime durable as Pro, so
+  /// no other state needs to change.
+  Future<String?> buyLifetime() async {
+    if (!isSupported) return null;
     try {
-      await _iap.restorePurchases();
+      final status = await _channel.invokeMethod<String>('purchase', {
+        'productId': kWindowsLifetimeProductId,
+      });
+      switch (status) {
+        case 'purchased':
+        case 'alreadyPurchased':
+          _isPro = true;
+          return null;
+        case 'cancelled':
+          return null;
+        case 'networkError':
+          return 'Network error. Please check your connection and try again.';
+        case 'serverError':
+          return 'Microsoft Store server error. Please try again later.';
+        default:
+          return 'Purchase did not complete ($status).';
+      }
+    } on PlatformException catch (e) {
+      debugPrint('[WindowsIAP] buyLifetime error: ${e.message}');
+      return e.message ?? 'Unknown Store error.';
     } catch (e) {
-      debugPrint('[WindowsIAP] restore unavailable: $e');
+      debugPrint('[WindowsIAP] buyLifetime error: $e');
+      return e.toString();
     }
+  }
+
+  /// Re-checks the Microsoft Store license to restore a previously purchased
+  /// subscription. Returns true when an active subscription was found.
+  Future<bool> restore() async {
+    if (!isSupported) return false;
+    _isPro = await _checkLicense();
+    return _isPro;
   }
 }

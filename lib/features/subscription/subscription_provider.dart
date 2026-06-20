@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
+import 'appcoins_iap_provider.dart';
 import 'subscription_service.dart';
 import 'windows_iap_provider.dart';
 
@@ -43,12 +44,22 @@ final subscriptionProvider =
   SubscriptionNotifier.new,
 );
 
+/// Dev-only override: build with `--dart-define=FORCE_PAYWALL=true` to force a
+/// non-Pro state so the paywall always shows, bypassing the Store / RevenueCat
+/// license check. Defaults to false, so normal (Store) builds are unaffected —
+/// never pass this define for a build you upload to the Microsoft Store.
+const kForcePaywall = bool.fromEnvironment('FORCE_PAYWALL');
+
 /// Convenience provider — true when the user has an active Pro entitlement.
 /// Windows: uses Microsoft Store IAP via [windowsIsProProvider].
 /// Android / iOS / macOS: uses RevenueCat.
 final isProProvider = Provider<bool>((ref) {
+  if (kForcePaywall) return false;
   if (!kIsWeb && Platform.isWindows) {
     return ref.watch(windowsIsProProvider);
+  }
+  if (!kIsWeb && Platform.isIOS) {
+    return ref.watch(appCoinsIsProProvider);
   }
   final infoAsync = ref.watch(subscriptionProvider);
   return infoAsync.when(

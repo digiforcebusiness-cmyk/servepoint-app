@@ -71,6 +71,9 @@
 	     TODO: Replace the string below with the REVERSED_CLIENT_ID value
 	     from GoogleService-Info.plist once you complete the Firebase setup.
 	     It looks like: com.googleusercontent.apps.984531213248-XXXXXXXX -->
+	<!-- AppCoins (Aptoide) IAP requires the app to declare it sells digital goods. -->
+	<key>MKSellsDigitalGoods</key>
+	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -79,6 +82,15 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.googleusercontent.apps.984531213248-1bug93ot7hc64amt4pr1qdr2l450qkiv</string>
+			</array>
+		</dict>
+		<!-- AppCoins payment redirect scheme. -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER).iap</string>
 			</array>
 		</dict>
 	</array>

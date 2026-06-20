@@ -12,7 +12,7 @@ workflows:
         - apple_credentials   # Apple Distribution certificate + provisioning profile
       vars:
         BUNDLE_ID: "com.app.servepoint"
-        APP_STORE_APPLE_ID: "REPLACE_WITH_APP_STORE_APPLE_ID"  # from App Store Connect
+        APP_STORE_APPLE_ID: "6762546631"  # from App Store Connect
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.app.servepoint
@@ -32,6 +32,12 @@ workflows:
       - name: Flutter pub get
         script: flutter pub get
 
+      - name: Inject AppCoins SDK (SwiftPM) + entitlements
+        script: |
+          set -e
+          gem install xcodeproj --no-document
+          ruby ios/scripts/add_appcoins_spm.rb
+
       - name: Install CocoaPods
         script: |
           cd ios && pod install
@@ -46,13 +52,13 @@ workflows:
           find . -name "version.plist" -delete 2>/dev/null || true
           sed -i '' 's/VERSIONING_SYSTEM = "apple-generic";//g' \
             ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 50" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 63" ios/Runner/Info.plist
           echo "Clean done. Info.plist CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' ios/Runner/Info.plist)"
 
       - name: Build iOS release IPA
         script: |
           set -e
-          TARGET_BUILD=50
+          TARGET_BUILD=63
 
           flutter build ipa --release --build-number $TARGET_BUILD \
             --export-options-plist=/Users/builder/export_options.plist
@@ -70,7 +76,7 @@ workflows:
           echo "IPA CFBundleVersion before patch: $ORIG_VER"
 
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $TARGET_BUILD" "$APP/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.0" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.4" "$APP/Info.plist"
           echo "IPA CFBundleVersion after patch:  $TARGET_BUILD"
 
           # Extract entitlements from the embedded provisioning profile

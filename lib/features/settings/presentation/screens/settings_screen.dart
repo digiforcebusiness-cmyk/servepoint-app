@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -7,10 +8,14 @@ import '../../../../core/printing/bluetooth_printer_service.dart';
 import '../../../../core/printing/thermal_print_service.dart';
 import '../../../../core/sync/sync_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/theme_mode_provider.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../shared/providers/app_providers.dart';
+import '../../../../core/widgets/tour_controller.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:in_app_review/in_app_review.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../pos/presentation/providers/pos_providers.dart';
 import '../../../qr_menu/presentation/screens/qr_menu_screen.dart';
@@ -50,12 +55,13 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final locale = ref.watch(appLocaleProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       appBar: AppBar(
-        backgroundColor: AppColors.primary,
+        backgroundColor: c.primary,
         title: Text(
           AppStrings.t('settings_title', locale),
           style: TextStyle(
@@ -114,6 +120,16 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Gap(16),
 
+          // ── Appearance ─────────────────────────────────────────────────────
+          _SettingsSection(
+            title: AppStrings.t('section_appearance', locale),
+            icon: Icons.palette_outlined,
+            children: [
+              _DarkModeTile(locale: locale),
+            ],
+          ),
+          const Gap(16),
+
           // ── Printer ────────────────────────────────────────────────────────
           _SettingsSection(
             title: AppStrings.t('section_printer', locale),
@@ -147,6 +163,20 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   MaterialPageRoute(builder: (_) => const QrMenuScreen()),
                 ),
+              ),
+              _NavTile(
+                icon: Icons.replay,
+                label: AppStrings.t('restart_tours', locale),
+                onTap: () async {
+                  await ref.read(tourControllerProvider).resetAll();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content:
+                          Text(AppStrings.t('restart_tours_done', locale)),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -188,21 +218,85 @@ class SettingsScreen extends ConsumerWidget {
           // ── Subscription ─────────────────────────────────────────────────
           _SubscriptionSection(locale: locale),
 
+          const Gap(16),
+
+          // ── About & Support ───────────────────────────────────────────────
+          _SettingsSection(
+            title: AppStrings.t('about_and_support', locale),
+            icon: Icons.info_outline,
+            children: [
+              _NavTile(
+                icon: Icons.privacy_tip_outlined,
+                label: AppStrings.t('privacy_policy', locale),
+                onTap: () => _openExternalUrl(
+                  context,
+                  'https://www.servepointpos.com/privacy',
+                  locale,
+                ),
+              ),
+              _NavTile(
+                icon: Icons.description_outlined,
+                label: AppStrings.t('terms_of_service', locale),
+                onTap: () => _openExternalUrl(
+                  context,
+                  'https://www.servepointpos.com/terms',
+                  locale,
+                ),
+              ),
+              if (!kIsWeb &&
+                  (defaultTargetPlatform == TargetPlatform.android ||
+                      defaultTargetPlatform == TargetPlatform.iOS))
+                _NavTile(
+                  icon: Icons.star_outline,
+                  label: AppStrings.t('rate_app', locale),
+                  onTap: _rateApp,
+                ),
+            ],
+          ),
+
           const Gap(24),
 
           // App version
-          const Center(
+          Center(
             child: Text(
               'ServePoint POS v1.0.0 — Offline-First',
               style: TextStyle(
                   fontSize: 11,
-                  color: AppColors.textMuted,
+                  color: c.textMuted,
                   fontStyle: FontStyle.italic),
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+// ─── About & Support helpers ──────────────────────────────────────────────────
+
+/// Opens [url] in the external browser; shows a SnackBar if the launch fails.
+Future<void> _openExternalUrl(
+    BuildContext context, String url, String locale) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final ok = await launchUrl(
+    Uri.parse(url),
+    mode: LaunchMode.externalApplication,
+  );
+  if (!ok) {
+    messenger.showSnackBar(
+      SnackBar(content: Text(AppStrings.t('open_link_failed', locale))),
+    );
+  }
+}
+
+/// Triggers the in-app store-review prompt, or falls back to the store
+/// listing page when the in-app flow is unavailable (e.g. rate-limited).
+Future<void> _rateApp() async {
+  final inAppReview = InAppReview.instance;
+  if (await inAppReview.isAvailable()) {
+    await inAppReview.requestReview();
+  } else {
+    await inAppReview.openStoreListing();
   }
 }
 
@@ -221,6 +315,7 @@ class _SettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -242,9 +337,9 @@ class _SettingsSection extends StatelessWidget {
         const Gap(8),
         Container(
           decoration: BoxDecoration(
-            color: AppColors.surfaceCard,
+            color: c.surfaceCard,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.divider),
+            border: Border.all(color: c.divider),
           ),
           child: Column(
             children: children.asMap().entries.map((e) {
@@ -253,8 +348,7 @@ class _SettingsSection extends StatelessWidget {
                 children: [
                   e.value,
                   if (!isLast)
-                    const Divider(
-                        height: 1, color: AppColors.divider, indent: 48),
+                    Divider(height: 1, color: c.divider, indent: 48),
                 ],
               );
             }).toList(),
@@ -282,44 +376,46 @@ class _EditableTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final value = ref.watch(provider);
 
     return ListTile(
-      leading: Icon(icon, color: AppColors.textSecondary, size: 20),
+      leading: Icon(icon, color: c.textSecondary, size: 20),
       title: Text(label,
-          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          style: TextStyle(fontSize: 13, color: c.textSecondary)),
       subtitle: Text(
         value,
-        style: const TextStyle(
-            fontSize: 14, color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+        style: TextStyle(
+            fontSize: 14, color: c.textPrimary, fontWeight: FontWeight.w500),
       ),
-      trailing: const Icon(Icons.edit, size: 16, color: AppColors.textMuted),
+      trailing: Icon(Icons.edit, size: 16, color: c.textMuted),
       onTap: () => _showEditDialog(context, ref, value),
     );
   }
 
   void _showEditDialog(BuildContext context, WidgetRef ref, String current) {
+    final c = AppColors.of(context);
     final ctrl = TextEditingController(text: current);
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surfaceCard,
+        backgroundColor: c.surfaceCard,
         title: Text(label,
-            style: const TextStyle(
-                color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                color: c.textPrimary, fontWeight: FontWeight.w700)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           textDirection:
               locale == 'ar' ? TextDirection.rtl : TextDirection.ltr,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: c.textPrimary),
           decoration: const InputDecoration(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(AppStrings.t('cancel_dialog', locale),
-                style: const TextStyle(color: AppColors.textSecondary)),
+                style: TextStyle(color: c.textSecondary)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -349,6 +445,7 @@ class _LocaleTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
@@ -356,7 +453,7 @@ class _LocaleTile extends ConsumerWidget {
         children: [
           Text(
             AppStrings.t('select_language', locale),
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: c.textMuted),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -371,10 +468,10 @@ class _LocaleTile extends ConsumerWidget {
                   duration: const Duration(milliseconds: 150),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: selected ? AppColors.accent.withValues(alpha: 0.15) : AppColors.surfaceElevated,
+                    color: selected ? AppColors.accent.withValues(alpha: 0.15) : c.surfaceElevated,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: selected ? AppColors.accent : AppColors.divider,
+                      color: selected ? AppColors.accent : c.divider,
                       width: selected ? 2 : 1,
                     ),
                   ),
@@ -388,7 +485,7 @@ class _LocaleTile extends ConsumerWidget {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
-                          color: selected ? AppColors.accent : AppColors.textPrimary,
+                          color: selected ? AppColors.accent : c.textPrimary,
                         ),
                       ),
                     ],
@@ -399,6 +496,36 @@ class _LocaleTile extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Dark Mode Tile ───────────────────────────────────────────────────────────
+
+class _DarkModeTile extends ConsumerWidget {
+  final String locale;
+  const _DarkModeTile({required this.locale});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
+    final mode = ref.watch(themeModeProvider).valueOrNull ?? ThemeMode.light;
+
+    return SwitchListTile(
+      secondary:
+          Icon(Icons.dark_mode_outlined, color: c.textSecondary, size: 20),
+      title: Text(
+        AppStrings.t('dark_mode', locale),
+        style: TextStyle(
+            fontSize: 14,
+            color: c.textPrimary,
+            fontWeight: FontWeight.w500),
+      ),
+      value: mode == ThemeMode.dark,
+      activeColor: AppColors.accent,
+      onChanged: (v) => ref
+          .read(themeModeProvider.notifier)
+          .set(v ? ThemeMode.dark : ThemeMode.light),
     );
   }
 }
@@ -426,6 +553,7 @@ class _CurrencyTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final current = ref.watch(currencyProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -434,11 +562,11 @@ class _CurrencyTile extends ConsumerWidget {
         children: [
           Text(
             AppStrings.t('select_currency', locale),
-            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 12, color: c.textMuted),
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
-            value: _kCurrencies.any((c) => c.$1 == current) ? current : '€',
+            value: _kCurrencies.any((cur) => cur.$1 == current) ? current : '€',
             decoration: InputDecoration(
               isDense: true,
               prefixIcon: Text(
@@ -446,9 +574,9 @@ class _CurrencyTile extends ConsumerWidget {
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.accent),
               ),
             ),
-            items: _kCurrencies.map((c) => DropdownMenuItem(
-              value: c.$1,
-              child: Text('${c.$1}  —  ${c.$2}'),
+            items: _kCurrencies.map((cur) => DropdownMenuItem(
+              value: cur.$1,
+              child: Text('${cur.$1}  —  ${cur.$2}'),
             )).toList(),
             onChanged: (v) {
               if (v != null) {
@@ -471,21 +599,22 @@ class _PaperWidthTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final width = ref.watch(paperWidthProvider);
 
     return ListTile(
-      leading: const Icon(Icons.receipt, color: AppColors.textSecondary, size: 20),
+      leading: Icon(Icons.receipt, color: c.textSecondary, size: 20),
       title: Text(
         AppStrings.t('paper_width', locale),
-        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        style: TextStyle(fontSize: 13, color: c.textSecondary),
       ),
       trailing: SegmentedButton<PaperWidth>(
         style: SegmentedButton.styleFrom(
-          backgroundColor: AppColors.surfaceElevated,
+          backgroundColor: c.surfaceElevated,
           selectedBackgroundColor: AppColors.accent,
-          foregroundColor: AppColors.textSecondary,
+          foregroundColor: c.textSecondary,
           selectedForegroundColor: Colors.white,
-          side: const BorderSide(color: AppColors.divider),
+          side: BorderSide(color: c.divider),
           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
         segments: const [
@@ -508,19 +637,20 @@ class _PrinterPairingTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final selectedId = ref.watch(selectedPrinterIdProvider);
 
     return ListTile(
-      leading: const Icon(Icons.bluetooth, color: AppColors.textSecondary, size: 20),
+      leading: Icon(Icons.bluetooth, color: c.textSecondary, size: 20),
       title: Text(
         AppStrings.t('selected_printer', locale),
-        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        style: TextStyle(fontSize: 13, color: c.textSecondary),
       ),
       subtitle: Text(
         selectedId ?? AppStrings.t('no_printer_selected', locale),
         style: TextStyle(
           fontSize: 13,
-          color: selectedId != null ? AppColors.accentGreen : AppColors.textMuted,
+          color: selectedId != null ? AppColors.accentGreen : c.textMuted,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -535,9 +665,10 @@ class _PrinterPairingTile extends ConsumerWidget {
   }
 
   void _showPrinterScan(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surfaceCard,
+      backgroundColor: c.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -556,6 +687,7 @@ class _PrinterScanSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final scanAsync = ref.watch(printerScanResultsProvider);
 
     return Padding(
@@ -570,10 +702,10 @@ class _PrinterScanSheet extends ConsumerWidget {
               const Gap(8),
               Text(
                 AppStrings.t('searching_printers', locale),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: c.textPrimary,
                 ),
               ),
             ],
@@ -597,7 +729,7 @@ class _PrinterScanSheet extends ConsumerWidget {
                     padding: const EdgeInsets.all(20),
                     child: Text(
                       AppStrings.t('no_devices', locale),
-                      style: const TextStyle(color: AppColors.textMuted),
+                      style: TextStyle(color: c.textMuted),
                     ),
                   ),
                 );
@@ -611,12 +743,12 @@ class _PrinterScanSheet extends ConsumerWidget {
                       ? device.remoteId.str
                       : device.platformName;
                   return ListTile(
-                    leading: const Icon(Icons.print, color: AppColors.textSecondary),
+                    leading: Icon(Icons.print, color: c.textSecondary),
                     title: Text(name,
-                        style: const TextStyle(color: AppColors.textPrimary)),
+                        style: TextStyle(color: c.textPrimary)),
                     subtitle: Text(device.remoteId.str,
-                        style: const TextStyle(
-                            color: AppColors.textMuted, fontSize: 11)),
+                        style: TextStyle(
+                            color: c.textMuted, fontSize: 11)),
                     trailing: ElevatedButton(
                       onPressed: () async {
                         final service =
@@ -655,6 +787,7 @@ class _SyncStatusTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final syncState = ref.watch(syncServiceProvider);
     final pending = ref.watch(pendingSyncCountProvider);
 
@@ -691,7 +824,7 @@ class _SyncStatusTile extends ConsumerWidget {
       leading: Icon(statusIcon, color: statusColor, size: 20),
       title: Text(
         AppStrings.t('sync_status_label', locale),
-        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        style: TextStyle(fontSize: 13, color: c.textSecondary),
       ),
       subtitle: Text(
         statusText,
@@ -703,7 +836,7 @@ class _SyncStatusTile extends ConsumerWidget {
       ),
       trailing: syncState.status != SyncStatus.syncing
           ? IconButton(
-              icon: const Icon(Icons.refresh, color: AppColors.textMuted),
+              icon: Icon(Icons.refresh, color: c.textMuted),
               onPressed: () =>
                   ref.read(syncServiceProvider.notifier).syncNow(),
               tooltip: AppStrings.t('sync_now', locale),
@@ -725,6 +858,7 @@ class _SubscriptionSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final isPro = ref.watch(isProProvider);
     final expiry = ref.watch(proExpiryProvider);
 
@@ -736,24 +870,24 @@ class _SubscriptionSection extends ConsumerWidget {
         ListTile(
           leading: Icon(
             isPro ? Icons.star_rounded : Icons.star_outline_rounded,
-            color: isPro ? AppColors.accentAmber : AppColors.textMuted,
+            color: isPro ? AppColors.accentAmber : c.textMuted,
             size: 20,
           ),
           title: Text(
             isPro
                 ? 'ServePoint Pro'
                 : AppStrings.t('free_plan', locale),
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary),
+                color: c.textPrimary),
           ),
           subtitle: isPro && expiry != null
               ? Text(
                   '${AppStrings.t('expires_on', locale)} '
                   '${expiry.day}/${expiry.month}/${expiry.year}',
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.textMuted),
+                  style: TextStyle(
+                      fontSize: 11, color: c.textMuted),
                 )
               : null,
           trailing: isPro
@@ -792,15 +926,15 @@ class _SubscriptionSection extends ConsumerWidget {
         // Customer Center (manage subscription / cancel)
         if (isPro && isRevenueCatSupported)
           ListTile(
-            leading: const Icon(Icons.manage_accounts_outlined,
-                color: AppColors.textSecondary, size: 20),
+            leading: Icon(Icons.manage_accounts_outlined,
+                color: c.textSecondary, size: 20),
             title: Text(
               AppStrings.t('manage_subscription', locale),
-              style: const TextStyle(
-                  fontSize: 14, color: AppColors.textPrimary),
+              style: TextStyle(
+                  fontSize: 14, color: c.textPrimary),
             ),
-            trailing: const Icon(Icons.arrow_forward_ios,
-                size: 14, color: AppColors.textMuted),
+            trailing: Icon(Icons.arrow_forward_ios,
+                size: 14, color: c.textMuted),
             onTap: () async {
               await RevenueCatUI.presentCustomerCenter();
               await ref.read(subscriptionProvider.notifier).refresh();
@@ -809,12 +943,12 @@ class _SubscriptionSection extends ConsumerWidget {
         // Restore purchases
         if (isRevenueCatSupported)
           ListTile(
-            leading: const Icon(Icons.restore_rounded,
-                color: AppColors.textSecondary, size: 20),
+            leading: Icon(Icons.restore_rounded,
+                color: c.textSecondary, size: 20),
             title: Text(
               AppStrings.t('restore_purchases', locale),
-              style: const TextStyle(
-                  fontSize: 14, color: AppColors.textPrimary),
+              style: TextStyle(
+                  fontSize: 14, color: c.textPrimary),
             ),
             onTap: () async {
               final ok =
@@ -844,6 +978,7 @@ class _ServeursSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final c = AppColors.of(context);
     final isAr = locale == 'ar';
     final names = ref.watch(serverNamesListProvider);
 
@@ -868,12 +1003,12 @@ class _ServeursSection extends ConsumerWidget {
                   deleteIcon: const Icon(Icons.close, size: 14),
                   onDeleted: () =>
                       ref.read(serverNamesListProvider.notifier).remove(name),
-                  backgroundColor: AppColors.surfaceElevated,
-                  deleteIconColor: AppColors.textMuted,
-                  side: const BorderSide(color: AppColors.divider),
+                  backgroundColor: c.surfaceElevated,
+                  deleteIconColor: c.textMuted,
+                  side: BorderSide(color: c.divider),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20)),
-                  labelStyle: const TextStyle(color: AppColors.textPrimary),
+                  labelStyle: TextStyle(color: c.textPrimary),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
                 );
@@ -899,11 +1034,12 @@ class _ServeursSection extends ConsumerWidget {
   }
 
   void _showAddDialog(BuildContext context, WidgetRef ref, bool isAr) {
+    final c = AppColors.of(context);
     final ctrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceCard,
+        backgroundColor: c.surfaceCard,
         title: Text(
           isAr ? 'إضافة خادم' : 'Ajouter un serveur',
           style: const TextStyle(
@@ -916,16 +1052,16 @@ class _ServeursSection extends ConsumerWidget {
           style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
             hintText: isAr ? 'اسم الخادم' : 'Nom du serveur',
-            hintStyle: const TextStyle(color: AppColors.textMuted),
+            hintStyle: TextStyle(color: c.textMuted),
             filled: true,
-            fillColor: AppColors.surfaceElevated,
+            fillColor: c.surfaceElevated,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.divider),
+              borderSide: BorderSide(color: c.divider),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: AppColors.divider),
+              borderSide: BorderSide(color: c.divider),
             ),
           ),
           onSubmitted: (v) {
@@ -939,7 +1075,7 @@ class _ServeursSection extends ConsumerWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text(isAr ? 'إلغاء' : 'Annuler',
-                style: const TextStyle(color: AppColors.textMuted)),
+                style: TextStyle(color: c.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -972,10 +1108,11 @@ void _showFeedbackSheet(
   required String locale,
   required _FeedbackType type,
 }) {
+  final c = AppColors.of(context);
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surfaceCard,
+    backgroundColor: c.surfaceCard,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -1059,6 +1196,7 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final bottom = MediaQuery.of(context).viewInsets.bottom;
 
     return Padding(
@@ -1074,7 +1212,7 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
               height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: AppColors.divider,
+                color: c.divider,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1102,7 +1240,7 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
                   fontFamily: _isAr ? kCairoFont : null,
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+                  color: c.textPrimary,
                 ),
               ),
             ],
@@ -1115,25 +1253,25 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
             maxLines: 5,
             minLines: 4,
             textDirection: _isAr ? TextDirection.rtl : TextDirection.ltr,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
-              color: AppColors.textPrimary,
+              color: c.textPrimary,
             ),
             decoration: InputDecoration(
               hintText: _hint,
-              hintStyle: const TextStyle(
+              hintStyle: TextStyle(
                 fontSize: 13,
-                color: AppColors.textMuted,
+                color: c.textMuted,
               ),
               filled: true,
-              fillColor: AppColors.surfaceElevated,
+              fillColor: c.surfaceElevated,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.divider),
+                borderSide: BorderSide(color: c.divider),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.divider),
+                borderSide: BorderSide(color: c.divider),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1149,7 +1287,7 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
             _isAr
                 ? 'سيتم فتح تطبيق البريد الإلكتروني لإرسال رسالتك مباشرة إلى الفريق.'
                 : 'Votre client email s\'ouvrira pour envoyer votre message directement à l\'équipe.',
-            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+            style: TextStyle(fontSize: 11, color: c.textMuted),
             textAlign: _isAr ? TextAlign.right : TextAlign.left,
           ),
           const Gap(16),
@@ -1160,8 +1298,8 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
                 child: OutlinedButton(
                   onPressed: () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textSecondary,
-                    side: const BorderSide(color: AppColors.divider),
+                    foregroundColor: c.textSecondary,
+                    side: BorderSide(color: c.divider),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
@@ -1214,13 +1352,14 @@ class _NavTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return ListTile(
-      leading: Icon(icon, color: AppColors.textSecondary, size: 20),
+      leading: Icon(icon, color: c.textSecondary, size: 20),
       title: Text(label,
-          style: const TextStyle(
-              fontSize: 14, color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
-      trailing: const Icon(Icons.arrow_forward_ios,
-          size: 14, color: AppColors.textMuted),
+          style: TextStyle(
+              fontSize: 14, color: c.textPrimary, fontWeight: FontWeight.w500)),
+      trailing: Icon(Icons.arrow_forward_ios,
+          size: 14, color: c.textMuted),
       onTap: onTap,
     );
   }

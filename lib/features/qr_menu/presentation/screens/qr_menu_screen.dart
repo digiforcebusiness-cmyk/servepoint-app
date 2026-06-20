@@ -53,7 +53,7 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
   String get _menuUrl {
     final uid = _uid;
     if (uid == null) return '';
-    return 'https://www.servepointpos.com/menu.html?uid=$uid';
+    return 'https://servepoint-16302.web.app/menu.html?uid=$uid';
   }
 
   @override
@@ -119,10 +119,14 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
           'id': cat.id,
           'nameFr': cat.nameFr,
           'nameAr': cat.nameAr,
+          'iconName': cat.iconName,
           'products': catProducts.map((p) => {
             'nameFr': p.nameFr,
             'nameAr': p.nameAr,
             'price': p.price,
+            // Only include image if it's a public URL (local paths don't work on web)
+            if (p.imagePath != null && p.imagePath!.startsWith('http'))
+              'image': p.imagePath,
           }).toList(),
         });
       }
@@ -242,13 +246,14 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final locale = ref.watch(appLocaleProvider);
     final uid = _uid;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       appBar: AppBar(
-        backgroundColor: AppColors.primary,
+        backgroundColor: c.primary,
         title: Text(
           locale == 'ar' ? 'قائمة QR الرقمية' : 'Menu QR Digital',
           style: TextStyle(
@@ -263,7 +268,7 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                 locale == 'ar'
                     ? 'يجب تسجيل الدخول لاستخدام هذه الميزة'
                     : 'Connectez-vous pour utiliser cette fonctionnalité',
-                style: const TextStyle(color: AppColors.textMuted),
+                style: TextStyle(color: c.textMuted),
                 textAlign: TextAlign.center,
               ),
             )
@@ -276,9 +281,9 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: AppColors.surfaceCard,
+                      color: c.surfaceCard,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.divider),
+                      border: Border.all(color: c.divider),
                     ),
                     child: Column(
                       children: [
@@ -313,18 +318,18 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 10),
                             decoration: BoxDecoration(
-                              color: AppColors.surfaceElevated,
+                              color: c.surfaceElevated,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.divider),
+                              border: Border.all(color: c.divider),
                             ),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: Text(
                                     _menuUrl,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 10,
-                                      color: AppColors.textSecondary,
+                                      color: c.textSecondary,
                                       fontFamily: 'monospace',
                                     ),
                                     maxLines: 2,
@@ -378,8 +383,8 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                           locale == 'ar'
                               ? 'امسح هذا الرمز لعرض قائمتك الرقمية'
                               : 'Scannez ce code pour afficher votre menu digital',
-                          style: const TextStyle(
-                              color: AppColors.textMuted, fontSize: 12),
+                          style: TextStyle(
+                              color: c.textMuted, fontSize: 12),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -420,9 +425,9 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                                   Text(
                                     '${locale == 'ar' ? 'آخر نشر' : 'Dernière mise à jour'}: '
                                     '${DateFormat('dd/MM/yyyy HH:mm').format(_published.lastPublished!)}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11,
-                                      color: AppColors.textMuted,
+                                      color: c.textMuted,
                                     ),
                                   ),
                               ],
@@ -484,8 +489,8 @@ class _QrMenuScreenState extends ConsumerState<QrMenuScreen> {
                     locale == 'ar'
                         ? 'يقوم النشر بمزامنة جميع منتجاتك وفئاتك المتاحة مع قائمتك الرقمية عبر الإنترنت'
                         : 'La publication synchronise tous vos produits et catégories disponibles avec votre menu digital en ligne',
-                    style: const TextStyle(
-                        color: AppColors.textMuted, fontSize: 11),
+                    style: TextStyle(
+                        color: c.textMuted, fontSize: 11),
                     textAlign: TextAlign.center,
                   ),
                 ],

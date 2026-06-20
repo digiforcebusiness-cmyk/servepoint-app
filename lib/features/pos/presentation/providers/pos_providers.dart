@@ -408,7 +408,7 @@ final productSearchQueryProvider = StateProvider<String>((ref) => '');
 // ─── Product Grid Columns ──────────────────────────────────────────────────────
 
 /// Controls the number of columns in the product grid (2–7)
-final productGridColumnsProvider = StateProvider<int>((ref) => 4);
+final productGridColumnsProvider = StateProvider<int>((ref) => 7);
 
 final filteredProductsProvider = Provider<AsyncValue<List<Product>>>((ref) {
   final query = ref.watch(productSearchQueryProvider).toLowerCase();

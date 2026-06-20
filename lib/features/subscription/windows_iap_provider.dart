@@ -16,29 +16,42 @@ class WindowsIAPNotifier extends AsyncNotifier<bool> {
 
     final service = WindowsIAPService();
     _service = service;
-
-    // Update state whenever a purchase / restore is confirmed.
-    service.proStream.listen((isPro) {
-      state = AsyncValue.data(isPro);
-    });
-
     ref.onDispose(service.dispose);
     await service.initialize();
     return service.isPro;
   }
 
-  /// Open the Microsoft Store subscription purchase flow.
-  Future<void> purchase() async => _service?.buyPro();
+  /// Open the Microsoft Store subscription purchase flow and wait for result.
+  Future<void> purchase() async {
+    final service = _service;
+    if (service == null) return;
+    state = const AsyncValue.loading();
+    try {
+      await service.buyPro();
+    } finally {
+      state = AsyncValue.data(service.isPro);
+    }
+  }
+
+  /// Open the Microsoft Store lifetime durable purchase flow and wait for result.
+  Future<void> purchaseLifetime() async {
+    final service = _service;
+    if (service == null) return;
+    state = const AsyncValue.loading();
+    try {
+      await service.buyLifetime();
+    } finally {
+      state = AsyncValue.data(service.isPro);
+    }
+  }
 
   /// Restore existing Microsoft Store purchases (shows loading state).
   Future<void> restore() async {
     state = const AsyncValue.loading();
     try {
       await _service?.restore();
-      // Give the purchase stream a moment to emit before settling.
       await Future<void>.delayed(const Duration(seconds: 2));
     } finally {
-      // Always settle the state — never leave the app stuck on loading.
       state = AsyncValue.data(_service?.isPro ?? false);
     }
   }
@@ -48,7 +61,6 @@ class WindowsIAPNotifier extends AsyncNotifier<bool> {
   Future<void> silentRestore() async {
     try {
       await _service?.restore();
-      await Future<void>.delayed(const Duration(seconds: 2));
       state = AsyncValue.data(_service?.isPro ?? false);
     } catch (_) {
       state = AsyncValue.data(_service?.isPro ?? false);

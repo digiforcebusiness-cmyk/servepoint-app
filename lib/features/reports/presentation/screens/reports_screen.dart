@@ -1,11 +1,8 @@
-import 'dart:io';
-
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -141,12 +138,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
       final bytes = await doc.save();
 
-      Directory? dir;
-      try {
-        dir = await getDownloadsDirectory();
-      } catch (_) {}
-      dir ??= await getApplicationDocumentsDirectory();
-
       final slug = switch (_period) {
         _Period.today => 'today',
         _Period.week => 'week',
@@ -154,24 +145,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       };
       final fileName =
           'report_${slug}_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf';
-      final file =
-          File('${dir.path}${Platform.pathSeparator}$fileName');
-      await file.writeAsBytes(bytes);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              locale == 'ar'
-                  ? 'تم حفظ التقرير: ${file.path}'
-                  : 'Rapport sauvegardé : ${file.path}',
-            ),
-            backgroundColor: AppColors.accentGreen,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
+      // Open the native share / save sheet — user can save to Downloads,
+      // Google Drive, email, etc. Works on Android, iOS, and desktop.
+      await Printing.sharePdf(bytes: bytes, filename: fileName);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -189,6 +166,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final locale = ref.watch(appLocaleProvider);
     final statsAsync = ref.watch(reportStatsProvider(_period));
     final stats = statsAsync.value;
@@ -197,24 +175,32 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       children: [
         // Header bar
         Container(
-          color: AppColors.primary,
+          color: c.primary,
           padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
           child: Row(
             children: [
               const Icon(Icons.bar_chart, color: AppColors.accent, size: 20),
               const Gap(8),
-              Text(
-                AppStrings.t('reports_title', locale),
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+              Flexible(
+                child: Text(
+                  AppStrings.t('reports_title', locale),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: c.textPrimary,
+                  ),
                 ),
               ),
               const Gap(6),
-              Text(
-                '— ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
-                style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              Flexible(
+                child: Text(
+                  '— ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: c.textMuted),
+                ),
               ),
               const Spacer(),
               _PeriodSelector(
@@ -245,7 +231,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       icon: const Icon(Icons.download_outlined),
                       color: stats != null
                           ? AppColors.accent
-                          : AppColors.textMuted,
+                          : c.textMuted,
                       iconSize: 20,
                       tooltip: locale == 'ar'
                           ? 'تنزيل PDF'
@@ -644,6 +630,7 @@ class _PeriodSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final labels = {
       _Period.today: AppStrings.t('period_today', locale),
       _Period.week: AppStrings.t('period_week', locale),
@@ -664,10 +651,10 @@ class _PeriodSelector extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSel
                     ? AppColors.accent
-                    : AppColors.surfaceElevated,
+                    : c.surfaceElevated,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isSel ? AppColors.accent : AppColors.border,
+                  color: isSel ? AppColors.accent : c.border,
                 ),
               ),
               child: Text(
@@ -675,7 +662,7 @@ class _PeriodSelector extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: isSel ? Colors.white : AppColors.textSecondary,
+                  color: isSel ? Colors.white : c.textSecondary,
                 ),
               ),
             ),
@@ -835,12 +822,13 @@ class _KpiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: AppColors.surfaceCard,
+        color: c.surfaceCard,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: c.divider),
       ),
       child: Row(
         children: [
@@ -868,9 +856,9 @@ class _KpiCard extends StatelessWidget {
                 ),
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: AppColors.textMuted,
+                    color: c.textMuted,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -906,6 +894,7 @@ class _PaymentBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final labels = {
       'cash': AppStrings.t('pay_cash', locale),
       'card': AppStrings.t('pay_card', locale),
@@ -916,14 +905,14 @@ class _PaymentBreakdown extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.surfaceCard,
+          color: c.surfaceCard,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.divider),
+          border: Border.all(color: c.divider),
         ),
         child: Center(
           child: Text(
             AppStrings.t('no_data', locale),
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            style: TextStyle(color: c.textMuted, fontSize: 13),
           ),
         ),
       );
@@ -932,9 +921,9 @@ class _PaymentBreakdown extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surfaceCard,
+        color: c.surfaceCard,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: c.divider),
       ),
       child: Column(
         children: [
@@ -979,9 +968,9 @@ class _PaymentBreakdown extends StatelessWidget {
                       const Gap(4),
                       Text(
                         labels[method]!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: AppColors.textSecondary,
+                          color: c.textSecondary,
                         ),
                       ),
                     ],
@@ -1016,6 +1005,7 @@ class _HourlyBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final maxVal =
         hourlyRevenue.reduce((a, b) => a > b ? a : b);
     final maxY = (maxVal * 1.2).clamp(10.0, double.infinity);
@@ -1024,9 +1014,9 @@ class _HourlyBarChart extends StatelessWidget {
       height: 180,
       padding: const EdgeInsets.fromLTRB(0, 12, 12, 8),
       decoration: BoxDecoration(
-        color: AppColors.surfaceCard,
+        color: c.surfaceCard,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: c.divider),
       ),
       child: BarChart(
         BarChartData(
@@ -1050,8 +1040,8 @@ class _HourlyBarChart extends StatelessWidget {
                   if (v % 6 != 0) return const SizedBox.shrink();
                   return Text(
                     '${v.toInt()}h',
-                    style: const TextStyle(
-                        fontSize: 9, color: AppColors.textMuted),
+                    style: TextStyle(
+                        fontSize: 9, color: c.textMuted),
                   );
                 },
                 reservedSize: 18,
@@ -1068,7 +1058,7 @@ class _HourlyBarChart extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: maxY / 4,
             getDrawingHorizontalLine: (_) => FlLine(
-              color: AppColors.divider,
+              color: c.divider,
               strokeWidth: 1,
             ),
           ),
@@ -1093,8 +1083,8 @@ class _HourlyBarChart extends StatelessWidget {
                           ],
                         )
                       : LinearGradient(colors: [
-                          AppColors.surfaceElevated,
-                          AppColors.surfaceElevated,
+                          c.surfaceElevated,
+                          c.surfaceElevated,
                         ]),
                 ),
               ],
@@ -1116,18 +1106,19 @@ class _TopProductsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     if (products.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.surfaceCard,
+          color: c.surfaceCard,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.divider),
+          border: Border.all(color: c.divider),
         ),
         child: Center(
           child: Text(
             AppStrings.t('no_sales', locale),
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            style: TextStyle(color: c.textMuted, fontSize: 13),
           ),
         ),
       );
@@ -1135,9 +1126,9 @@ class _TopProductsList extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceCard,
+        color: c.surfaceCard,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: c.divider),
       ),
       child: Column(
         children: products.asMap().entries.map((e) {
@@ -1163,10 +1154,10 @@ class _TopProductsList extends StatelessWidget {
                     Expanded(
                       child: Text(
                         name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: c.textPrimary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1192,17 +1183,17 @@ class _TopProductsList extends StatelessWidget {
                     const Gap(10),
                     Text(
                       CurrencyFormatter.format(rev, locale: locale),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                        color: c.textPrimary,
                       ),
                     ),
                   ],
                 ),
               ),
               if (!isLast)
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(height: 1, color: c.divider),
             ],
           );
         }).toList(),
@@ -1221,18 +1212,19 @@ class _TopOrdersList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     if (orders.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.surfaceCard,
+          color: c.surfaceCard,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.divider),
+          border: Border.all(color: c.divider),
         ),
         child: Center(
           child: Text(
             AppStrings.t('no_orders_report', locale),
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            style: TextStyle(color: c.textMuted, fontSize: 13),
           ),
         ),
       );
@@ -1240,9 +1232,9 @@ class _TopOrdersList extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceCard,
+        color: c.surfaceCard,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: c.divider),
       ),
       child: Column(
         children: orders.asMap().entries.map((e) {
@@ -1289,17 +1281,17 @@ class _TopOrdersList extends StatelessWidget {
                         children: [
                           Text(
                             '#${order.id}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
+                              color: c.textPrimary,
                             ),
                           ),
                           Text(
                             typeLabel,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: AppColors.textMuted,
+                              color: c.textMuted,
                             ),
                           ),
                         ],
@@ -1324,7 +1316,7 @@ class _TopOrdersList extends StatelessWidget {
                 ),
               ),
               if (!isLast)
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(height: 1, color: c.divider),
             ],
           );
         }).toList(),
@@ -1341,13 +1333,14 @@ class _RankBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     final colors = {
       1: const Color(0xFFFFD700),
       2: const Color(0xFFC0C0C0),
       3: const Color(0xFFCD7F32),
     };
-    final color = colors[rank] ?? AppColors.surfaceElevated;
-    final textColor = rank <= 3 ? Colors.white : AppColors.textSecondary;
+    final color = colors[rank] ?? c.surfaceElevated;
+    final textColor = rank <= 3 ? Colors.white : c.textSecondary;
 
     return Container(
       width: 24,
@@ -1377,16 +1370,17 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Row(
       children: [
         Icon(icon, size: 16, color: AppColors.accent),
         const Gap(6),
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
+            color: c.textPrimary,
           ),
         ),
       ],

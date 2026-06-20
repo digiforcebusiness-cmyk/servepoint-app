@@ -8,6 +8,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../appcoins_iap_provider.dart';
 import '../subscription_provider.dart';
 import '../subscription_service.dart';
 import '../windows_iap_provider.dart';
@@ -28,6 +29,15 @@ Future<bool> showServePointPaywall(BuildContext context, WidgetRef ref) async {
     // isPro is updated automatically by the purchase stream — no restore() call
     // here, which would flash the AppGate through loading→OnboardingScreen(page 0).
     return ref.read(windowsIsProProvider);
+  }
+
+  // ── iOS: Aptoide AppCoins IAP ────────────────────────────────────────────
+  if (!kIsWeb && Platform.isIOS) {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const _AppCoinsPaywallDialog(),
+    );
+    return ref.read(appCoinsIsProProvider);
   }
 
   if (!isRevenueCatSupported) {
@@ -285,56 +295,58 @@ class _WindowsPaywallDialog extends ConsumerStatefulWidget {
 }
 
 class _WindowsPaywallDialogState extends ConsumerState<_WindowsPaywallDialog> {
-  bool _loading = false;
-  String? _priceString;
+  String? _monthlyPriceString;
+  String? _lifetimePriceString;
+  bool _loadingMonthly = false;
+  bool _loadingLifetime = false;
 
   @override
   void initState() {
     super.initState();
-    _loadPrice();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final service = ref.read(windowsIAPProvider.notifier).service;
+      if (service == null) return;
+      final monthly = await service.fetchPriceString();
+      final lifetime = await service.fetchLifetimePriceString();
+      if (!mounted) return;
+      setState(() {
+        // The Microsoft Store returns "$0.00" (and similar) for add-ons
+        // that aren't actually for sale yet (still in certification,
+        // paused, or not visible to this account). Treat that as "no
+        // price available" so the hardcoded fallback shows instead.
+        _monthlyPriceString = _usablePrice(monthly);
+        _lifetimePriceString = _usablePrice(lifetime);
+      });
+    });
   }
 
-  Future<void> _loadPrice() async {
-    final service = ref.read(windowsIAPProvider.notifier).service;
-    final product = await service?.fetchProProduct();
-    if (mounted && product != null) {
-      setState(() => _priceString = product.price);
+  Future<void> _buyMonthly() async {
+    if (_loadingMonthly) return;
+    setState(() => _loadingMonthly = true);
+    try {
+      await ref.read(windowsIAPProvider.notifier).purchase();
+    } finally {
+      if (mounted) setState(() => _loadingMonthly = false);
     }
   }
 
-  Future<void> _subscribe() async {
-    final service = ref.read(windowsIAPProvider.notifier).service;
-    if (service != null && !service.isStoreAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Subscription requires the Microsoft Store version of ServePoint. '
-            'Please install from the Store to subscribe.',
-          ),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 5),
-        ),
-      );
-      return;
+  Future<void> _buyLifetime() async {
+    if (_loadingLifetime) return;
+    setState(() => _loadingLifetime = true);
+    try {
+      await ref.read(windowsIAPProvider.notifier).purchaseLifetime();
+    } finally {
+      if (mounted) setState(() => _loadingLifetime = false);
     }
-    setState(() => _loading = true);
-    await ref.read(windowsIAPProvider.notifier).purchase();
-    // buyNonConsumable() is fire-and-forget on Windows — the result arrives
-    // asynchronously via purchaseStream → windowsIsProProvider.
-    // The ref.listen in build() will pop the dialog when isPro becomes true.
-    // If the Store dialog was cancelled or failed, reset the loading state.
-    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _restore() async {
-    setState(() => _loading = true);
     await ref.read(windowsIAPProvider.notifier).silentRestore();
     if (mounted) {
       final isPro = ref.read(windowsIsProProvider);
       if (isPro) {
         Navigator.pop(context);
       } else {
-        setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('No active subscription found.'),
@@ -365,54 +377,51 @@ class _WindowsPaywallDialogState extends ConsumerState<_WindowsPaywallDialog> {
                 fontWeight: FontWeight.w800,
                 fontSize: 18)),
       ]),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Unlock all Pro features on your Windows device.',
-            style: TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-          const SizedBox(height: 16),
-          ...[
-            'Unlimited devices & real-time sync',
-            'Kitchen Display System (KDS)',
-            'Inventory management',
-            'Sales reports & analytics',
-            'Bluetooth thermal printer',
-          ].map((f) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(children: [
-                  const Icon(Icons.check_circle_rounded,
-                      size: 16, color: AppColors.accentAmber),
-                  const SizedBox(width: 8),
-                  Text(f,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13)),
-                ]),
-              )),
-          const SizedBox(height: 20),
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else ...[
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _subscribe,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text(
-                  _priceString != null
-                      ? 'Subscribe — $_priceString / month'
-                      : 'Subscribe — \$5.00 / month',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 15),
-                ),
+      content: SizedBox(
+        // AlertDialog on desktop doesn't bound horizontal width by default,
+        // so a Row with Expanded children collapses unpredictably. Pin the
+        // dialog content to a width that comfortably fits two cards.
+        width: 580,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _PaywallCard(
+                    title: 'Monthly',
+                    price: _monthlyPriceString ?? '\$4.99',
+                    period: '/ month',
+                    bullets: const [
+                      'Auto-renews',
+                      'Cancel anytime in Microsoft Store',
+                      'All Pro features',
+                    ],
+                    ctaLabel: 'Subscribe',
+                    loading: _loadingMonthly,
+                    onPressed: _buyMonthly,
+                    highlighted: false,
+                  )),
+                  const SizedBox(width: 14),
+                  Expanded(child: _PaywallCard(
+                    title: 'Lifetime',
+                    price: _lifetimePriceString ?? '\$99.99',
+                    period: 'one-time',
+                    bullets: const [
+                      'Pay once, own forever',
+                      'No subscription, no renewals',
+                      'Save ≈ 67% vs 12 months',
+                    ],
+                    ctaLabel: 'Get lifetime',
+                    loading: _loadingLifetime,
+                    onPressed: _buyLifetime,
+                    highlighted: true,
+                    badge: 'Best value',
+                  )),
+                ],
               ),
             ),
             const SizedBox(height: 10),
@@ -425,7 +434,137 @@ class _WindowsPaywallDialogState extends ConsumerState<_WindowsPaywallDialog> {
               ),
             ),
           ],
-        ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel',
+              style: TextStyle(color: Colors.white38)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Returns the price string unchanged if it represents a real non-zero
+/// price, or `null` otherwise so the caller can fall back to a hardcoded
+/// display value. Shared by the Windows and iOS paywall dialogs.
+String? _usablePrice(String? s) {
+  if (s == null) return null;
+  final trimmed = s.trim();
+  if (trimmed.isEmpty) return null;
+  // Match prices that read as zero: "0.00", "0,00", "$0.00", "0", etc.
+  final digitsAndSeparators = trimmed.replaceAll(RegExp(r'[^0-9.,]'), '');
+  final hasNonZero = RegExp(r'[1-9]').hasMatch(digitsAndSeparators);
+  if (!hasNonZero) return null;
+  return trimmed;
+}
+
+// ─── iOS AppCoins Paywall (lifetime only) ─────────────────────────────────────
+
+class _AppCoinsPaywallDialog extends ConsumerStatefulWidget {
+  const _AppCoinsPaywallDialog();
+
+  @override
+  ConsumerState<_AppCoinsPaywallDialog> createState() =>
+      _AppCoinsPaywallDialogState();
+}
+
+class _AppCoinsPaywallDialogState
+    extends ConsumerState<_AppCoinsPaywallDialog> {
+  String? _priceString;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final service = ref.read(appCoinsIapProvider.notifier).service;
+      if (service == null) return;
+      final price = await service.fetchLifetimePriceString();
+      if (!mounted) return;
+      setState(() => _priceString = _usablePrice(price));
+    });
+  }
+
+  Future<void> _buy() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      await ref.read(appCoinsIapProvider.notifier).purchaseLifetime();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _restore() async {
+    await ref.read(appCoinsIapProvider.notifier).silentRestore();
+    if (!mounted) return;
+    if (ref.read(appCoinsIsProProvider)) {
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No previous purchase found.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<bool>(appCoinsIsProProvider, (_, isPro) {
+      if (isPro && mounted) Navigator.pop(context);
+    });
+
+    return AlertDialog(
+      backgroundColor: AppColors.headerDark,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(children: [
+        Icon(Icons.workspace_premium_rounded,
+            color: AppColors.accentAmber, size: 22),
+        SizedBox(width: 8),
+        Text('ServePoint Pro',
+            style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 18)),
+      ]),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+            _PaywallCard(
+              title: 'Lifetime',
+              price: _priceString ?? '\$99',
+              period: 'one-time',
+              bullets: const [
+                'Pay once, own forever',
+                'No subscription, no renewals',
+                'All Pro features',
+              ],
+              ctaLabel: 'Get lifetime',
+              loading: _loading,
+              onPressed: _buy,
+              highlighted: true,
+              badge: 'Best value',
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: _restore,
+                child: const Text('Restore purchase',
+                    style: TextStyle(color: Colors.white54)),
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -445,8 +584,9 @@ class _UnsupportedPlatformDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return AlertDialog(
-      backgroundColor: AppColors.surfaceCard,
+      backgroundColor: c.surfaceCard,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Row(
         children: [
@@ -458,10 +598,10 @@ class _UnsupportedPlatformDialog extends StatelessWidget {
           ),
         ],
       ),
-      content: const Text(
+      content: Text(
         'Subscriptions are managed on mobile (Android / iOS).\n\n'
         'On this device, all Pro features are enabled automatically.',
-        style: TextStyle(color: AppColors.textSecondary),
+        style: TextStyle(color: c.textSecondary),
       ),
       actions: [
         ElevatedButton(
@@ -551,10 +691,11 @@ class SubscriptionStatusChip extends ConsumerWidget {
 
   Future<void> _openCustomerCenter(BuildContext context, WidgetRef ref) async {
     if (!kIsWeb && Platform.isWindows) {
+      final c = AppColors.of(context);
       await showDialog<void>(
         context: context,
         builder: (_) => AlertDialog(
-          backgroundColor: AppColors.surfaceCard,
+          backgroundColor: c.surfaceCard,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(children: [
@@ -563,10 +704,10 @@ class SubscriptionStatusChip extends ConsumerWidget {
             Text('ServePoint Pro',
                 style: TextStyle(fontWeight: FontWeight.w700)),
           ]),
-          content: const Text(
+          content: Text(
             'To manage or cancel your subscription, open the Microsoft Store '
             'app → Library → Subscriptions → ServePoint POS.',
-            style: TextStyle(color: AppColors.textSecondary),
+            style: TextStyle(color: c.textSecondary),
           ),
           actions: [
             ElevatedButton(
@@ -624,22 +765,23 @@ class _ProLockedOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColors.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.lock_outline_rounded,
-              size: 48, color: AppColors.textMuted),
+          Icon(Icons.lock_outline_rounded,
+              size: 48, color: c.textMuted),
           const SizedBox(height: 16),
           Text(
             featureName != null
                 ? '$featureName est réservé à ServePoint Pro'
                 : 'Fonctionnalité réservée à ServePoint Pro',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
+              color: c.textSecondary,
             ),
           ),
           const SizedBox(height: 20),
@@ -658,6 +800,167 @@ class _ProLockedOverlay extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PaywallCard extends StatelessWidget {
+  final String title;
+  final String price;
+  final String period;
+  final List<String> bullets;
+  final String ctaLabel;
+  final bool loading;
+  final VoidCallback onPressed;
+  final bool highlighted;
+  final String? badge;
+
+  const _PaywallCard({
+    required this.title,
+    required this.price,
+    required this.period,
+    required this.bullets,
+    required this.ctaLabel,
+    required this.loading,
+    required this.onPressed,
+    required this.highlighted,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Colors are hardcoded for the navy paywall dialog background
+    // (AppColors.headerDark). Theme tokens would resolve to dark text on
+    // the light app theme — invisible on the dialog.
+    const cardBg = Color(0xFF252540);                 // slightly lighter navy
+    const borderIdle = Color(0xFF3A3A55);
+    const textPrimary = Colors.white;
+    const textSecondary = Color(0xCCFFFFFF);          // white at ~80%
+    const textMuted = Color(0x99FFFFFF);              // white at ~60%
+
+    final card = Container(
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlighted ? AppColors.accent : borderIdle,
+          width: highlighted ? 2 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                color: textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              )),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(price,
+                  style: const TextStyle(
+                    color: textPrimary,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                  )),
+              const SizedBox(width: 6),
+              Text(period,
+                  style: const TextStyle(
+                    color: textSecondary,
+                    fontSize: 13,
+                  )),
+            ],
+          ),
+          const SizedBox(height: 14),
+          for (final b in bullets)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.check, size: 16, color: textMuted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(b,
+                        style: const TextStyle(
+                          color: textSecondary,
+                          fontSize: 13,
+                          height: 1.3,
+                        )),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: loading ? null : onPressed,
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    highlighted ? AppColors.accent : Colors.white,
+                foregroundColor: highlighted
+                    ? Colors.white
+                    : const Color(0xFF1A1A2E),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+              child: loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(ctaLabel,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      )),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (badge == null) return card;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        card,
+        Positioned(
+          top: -10,
+          right: 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.accent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              badge!,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
